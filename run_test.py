@@ -1,8 +1,13 @@
 import base64
+from contextlib import contextmanager
+from copy import deepcopy
 import gzip
 import io
 import json
+import os
+import tempfile
 from typing import Generator, Protocol
+from datafusion import SessionContext
 from pydantic import BaseModel
 import polars as pl
 
@@ -83,6 +88,7 @@ class FakeMetadataStore(MetadataStore):
     def __init__(self) -> None:
         self.table_versions: dict[str, int] = {}
         self.micro_partitions: dict[str, list[dict]] = {}
+        self.old_versions: dict[str, dict[int, list[dict]]] = {}
         self.micropartition_ids: dict[str, int] = {}
 
     def get_table_version(self, table: Table) -> int:
@@ -91,11 +97,25 @@ class FakeMetadataStore(MetadataStore):
 
         return self.table_versions[table.name]
 
+    def __archive_version(self, table: Table):
+        if table.name not in self.old_versions:
+            self.old_versions[table.name] = {}
+
+        current_version = self.get_table_version(table)
+        if current_version in self.old_versions[table.name]:
+            raise ValueError("Version already archived")
+
+        self.old_versions[table.name][current_version] = deepcopy(
+            self.micro_partitions.get(table.name, [])
+        )
+
     def add_micro_partition(
         self, table: Table, current_version: int, micro_partition: MicroPartition
     ):
         if self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
+
+        self.__archive_version(table)
 
         if table.name not in self.micro_partitions:
             self.micro_partitions[table.name] = []
@@ -118,12 +138,25 @@ class FakeMetadataStore(MetadataStore):
         return self.micropartition_ids[table.name]
 
     def micropartitions(
-        self, table: Table, s3: S3Like
+        self, table: Table, s3: S3Like, version: int | None = None
     ) -> Generator[MicroPartition, None, None]:
-        if table.name not in self.micro_partitions:
-            return
+        """
+        A generator that loops through all the micro partitions for a table.
+        """
 
-        for metadata in self.micro_partitions[table.name]:
+        if version is None:
+            micropartitions = self.micro_partitions[table.name]
+            if table.name not in self.micro_partitions:
+                return
+        else:
+            if table.name not in self.old_versions:
+                raise ValueError(f"Table {table.name} has no archived versions")
+            if version not in self.old_versions[table.name]:
+                raise ValueError(f"Version {version} not found")
+
+            micropartitions = self.old_versions[table.name][version]
+
+        for metadata in micropartitions:
             micro_partition_raw = s3.get_object("bucket", f"{metadata['id']}")
             if micro_partition_raw is None:
                 raise ValueError(f"Micro partition `{metadata['id']}` not found")
@@ -136,6 +169,9 @@ class FakeMetadataStore(MetadataStore):
             )
 
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+        """
+        Returns a dataframe containing all the data for the table.
+        """
         out: pl.DataFrame | None = None
         for metadata in self.micropartitions(table, s3):
             if out is None:
@@ -193,6 +229,28 @@ def insert(
     metadata_store.add_micro_partition(table, current_version, micro_partition)
 
 
+@contextmanager
+def build_from_old_version(
+    table: Table, metadata_store: MetadataStore, s3: S3Like, version: int
+):
+    if table.name not in metadata_store.old_versions:
+        raise ValueError(f"Table {table.name} has no archived versions")
+
+    if version not in metadata_store.old_versions[table.name]:
+        raise ValueError(f"Version {version} not found")
+
+    ctx = SessionContext()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for p in metadata_store.old_versions[table.name][version]:
+            print(p)
+            path = os.path.join(tmpdir, f"{p['id']}.parquet")
+            p.dump().write_parquet(path)
+
+        ctx.register_parquet("users", tmpdir)
+
+        yield ctx
+
+
 def test_simple_insert():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
@@ -242,3 +300,15 @@ def test_simple_insert():
         )
 
     assert metadata_store.all(table, s3).to_dicts() == users
+
+    # Dump in mem parquet files to tmp storage
+    ctx = SessionContext()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for p in metadata_store.micropartitions(table, s3, version=1):
+            path = os.path.join(tmpdir, f"{p.id}.parquet")
+            p.dump().write_parquet(path)
+
+        ctx.register_parquet("users", tmpdir)
+
+        df = ctx.sql("SELECT sum(id) FROM users")
+        print(df.to_polars())
