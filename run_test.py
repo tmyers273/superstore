@@ -19,6 +19,7 @@ def insert(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
     # TODO: validate schema
+    print(f"[mutation] Inserting {len(items)} rows into {table.name}")
 
     # Get the current table version number
     current_version = metadata_store.get_table_version(table)
@@ -48,6 +49,7 @@ def insert(
 
 
 def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
+    print(f"[mutation] Deleting {len(pks)} rows from {table.name}")
     # TODO: validate schema
     # TODO: error if pk is not found?
 
@@ -96,6 +98,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 def update(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
+    print(f"[mutation] Updating {len(items)} rows in {table.name}")
     # TODO: validate schema
     # TODO: error if pk is not found?
 
@@ -159,6 +162,7 @@ def build_table(
 
 
 def test_simple_insert():
+    print("\n\n")
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
@@ -208,13 +212,7 @@ def test_simple_insert():
 
     assert metadata_store.all(table, s3).to_dicts() == users
 
-    # Dump in mem parquet files to tmp storage
-    with build_table(table, metadata_store, s3, version=1) as ctx:
-        df = ctx.sql("SELECT sum(id) FROM users")
-        print(df.to_polars())
-
     delete(table, s3, metadata_store, [3])
-
     assert metadata_store.get_table_version(table) == 3
 
     with build_table(table, metadata_store, s3) as ctx:
@@ -240,6 +238,7 @@ def test_simple_insert():
         assert first["name"] == "New Name"
         assert first["email"] == "new.email@example.com"
 
+    print("\n\nDumping all versions:")
     versions = metadata_store.get_table_version(table)
     for v in list(range(1, versions)) + [None]:
         with build_table(table, metadata_store, s3, version=v) as ctx:
