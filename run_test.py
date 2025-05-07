@@ -1,7 +1,6 @@
 import base64
 from contextlib import contextmanager
 from copy import deepcopy
-import gzip
 import io
 import json
 import os
@@ -60,7 +59,6 @@ class MicroPartition(BaseModel):
 class ColumnDefinitions(BaseModel):
     name: str
     type: str
-    type: str
 
 
 class Table(BaseModel):
@@ -81,6 +79,11 @@ class MetadataStore(Protocol):
         """
         Returns a new, unused micropartition id.
         """
+        raise NotImplementedError
+
+    def micropartitions(
+        self, table: Table, s3: S3Like, version: int | None = None
+    ) -> Generator[MicroPartition, None, None]:
         raise NotImplementedError
 
 
@@ -181,6 +184,36 @@ class FakeMetadataStore(MetadataStore):
 
         return out
 
+    def replace_micro_partitions(
+        self,
+        table: Table,
+        current_version: int,
+        replacements: dict[int, MicroPartition],
+    ):
+        if self.get_table_version(table) != current_version:
+            raise ValueError("Version mismatch")
+
+        self.__archive_version(table)
+
+        if table.name not in self.micro_partitions:
+            raise ValueError(f"Table {table.name} has no micro partitions")
+
+        # Make sure all the ids exist
+        for old_id in replacements.keys():
+            current_ids = {p["id"] for p in self.micro_partitions[table.name]}
+            if old_id not in current_ids:
+                raise ValueError(f"Micro partition {old_id} not found: {current_ids}")
+
+        # Replace the micro partitions in metadata
+        index = {v["id"]: i for i, v in enumerate(self.micro_partitions[table.name])}
+        for old_id, micro_partition in replacements.items():
+            self.micro_partitions[table.name][index[old_id]] = {
+                "id": micro_partition.id,
+                "header": micro_partition.header,
+            }
+
+        self.table_versions[table.name] = current_version + 1
+
 
 class Metadata:
     pass
@@ -194,21 +227,10 @@ def insert(
     # Get the current table version number
     current_version = metadata_store.get_table_version(table)
 
-    # Build the data blob and byte ranges
+    # Build the parquet file
     buffer = io.BytesIO()
     items.write_parquet(buffer)
     buffer.seek(0)
-
-    # data = b""
-    # offset = 0
-    # ranges = []
-    # for col in table.columns:
-    #     values = [item[col.name] for item in items]
-    #     value = bytes(json.dumps(values), "utf-8")
-    #     chunk = gzip.compress(value)
-    #     ranges.append((offset, offset + len(chunk) - 1))
-    #     data += chunk
-    #     offset += len(chunk)
 
     # Create a new micro partition
     id = metadata_store.get_new_micropartition_id(table)
@@ -227,6 +249,51 @@ def insert(
 
     # Update metadata
     metadata_store.add_micro_partition(table, current_version, micro_partition)
+
+
+def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
+    # TODO: validate schema
+
+    # Get the current table version number
+    current_version = metadata_store.get_table_version(table)
+
+    # Load the parquet file
+    replacements: dict[int, MicroPartition] = {}
+    for p in metadata_store.micropartitions(table, s3):
+        df = p.dump()
+        before_cnt = len(df)
+        df = df.filter(~pl.col("id").is_in(pks))
+        after_cnt = len(df)
+
+        # Skip if no rows were deleted from this micro partition
+        if after_cnt == before_cnt:
+            continue
+
+        buffer = io.BytesIO()
+        df.write_parquet(buffer)
+        buffer.seek(0)
+
+        # Create a new micro partition
+        id = metadata_store.get_new_micropartition_id(table)
+        micro_partition = MicroPartition(
+            id=id,
+            header=Header(
+                columns=[col.name for col in table.columns],
+                types=[col.type for col in table.columns],
+                byte_ranges=[],
+            ),
+            data=base64.b64encode(buffer.getvalue()),
+        )
+
+        # Try saving to S3
+        s3.put_object(
+            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
+        )
+
+        replacements[p.id] = micro_partition
+
+    # Update metadata
+    metadata_store.replace_micro_partitions(table, current_version, replacements)
 
 
 @contextmanager
@@ -297,3 +364,14 @@ def test_simple_insert():
     with build_table(table, metadata_store, s3, version=1) as ctx:
         df = ctx.sql("SELECT sum(id) FROM users")
         print(df.to_polars())
+
+    delete(table, s3, metadata_store, [3])
+
+    assert metadata_store.get_table_version(table) == 3
+
+    with build_table(table, metadata_store, s3) as ctx:
+        df = ctx.sql("SELECT * FROM users ORDER BY id asc")
+        df = df.to_polars()
+
+        assert len(df) == 4
+        assert [1, 2, 4, 5] == df["id"].to_list()
