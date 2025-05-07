@@ -15,6 +15,14 @@ class MetadataStore(Protocol):
     ):
         raise NotImplementedError
 
+    def replace_micro_partitions(
+        self,
+        table: Table,
+        current_version: int,
+        replacements: dict[int, MicroPartition],
+    ):
+        raise NotImplementedError
+
     def get_new_micropartition_id(self, table: Table) -> int:
         """
         Returns a new, unused micropartition id.
