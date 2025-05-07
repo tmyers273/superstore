@@ -253,6 +253,7 @@ def insert(
 
 def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
     # TODO: validate schema
+    # TODO: error if pk is not found?
 
     # Get the current table version number
     current_version = metadata_store.get_table_version(table)
@@ -268,6 +269,57 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         # Skip if no rows were deleted from this micro partition
         if after_cnt == before_cnt:
             continue
+
+        buffer = io.BytesIO()
+        df.write_parquet(buffer)
+        buffer.seek(0)
+
+        # Create a new micro partition
+        id = metadata_store.get_new_micropartition_id(table)
+        micro_partition = MicroPartition(
+            id=id,
+            header=Header(
+                columns=[col.name for col in table.columns],
+                types=[col.type for col in table.columns],
+                byte_ranges=[],
+            ),
+            data=base64.b64encode(buffer.getvalue()),
+        )
+
+        # Try saving to S3
+        s3.put_object(
+            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
+        )
+
+        replacements[p.id] = micro_partition
+
+    # Update metadata
+    metadata_store.replace_micro_partitions(table, current_version, replacements)
+
+
+def update(
+    table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
+):
+    # TODO: validate schema
+    # TODO: error if pk is not found?
+
+    # Get the current table version number
+    current_version = metadata_store.get_table_version(table)
+
+    # Load the parquet file
+    replacements: dict[int, MicroPartition] = {}
+    for p in metadata_store.micropartitions(table, s3):
+        df = p.dump()
+        updated_items = items.filter(pl.col("id").is_in(df["id"]))
+
+        # TODO: only flag this for an update if something actually changed
+
+        # Skip if no rows were deleted from this micro partition
+        if len(df) == 0:
+            continue
+
+        # Merge the new items
+        df = df.vstack(updated_items).unique(subset=["id"], keep="last")
 
         buffer = io.BytesIO()
         df.write_parquet(buffer)
@@ -375,3 +427,28 @@ def test_simple_insert():
 
         assert len(df) == 4
         assert [1, 2, 4, 5] == df["id"].to_list()
+
+    update(
+        table,
+        s3,
+        metadata_store,
+        pl.DataFrame([{"id": 1, "name": "New Name", "email": "new.email@example.com"}]),
+    )
+
+    with build_table(table, metadata_store, s3) as ctx:
+        df = ctx.sql("SELECT * FROM users ORDER BY id asc")
+        df = df.to_polars()
+
+        assert len(df) == 4
+        first = df.to_dicts()[0]
+        assert first["name"] == "New Name"
+        assert first["email"] == "new.email@example.com"
+
+    versions = metadata_store.get_table_version(table)
+    for v in list(range(1, versions)) + [None]:
+        with build_table(table, metadata_store, s3, version=v) as ctx:
+            df = ctx.sql("SELECT * FROM users ORDER BY id asc")
+            df = df.to_polars()
+
+            print(f"\n`users` table at version {v or 'latest'}:")
+            print(df)
