@@ -230,24 +230,16 @@ def insert(
 
 
 @contextmanager
-def build_from_old_version(
-    table: Table, metadata_store: MetadataStore, s3: S3Like, version: int
+def build_table(
+    table: Table, metadata_store: MetadataStore, s3: S3Like, version: int | None = None
 ):
-    if table.name not in metadata_store.old_versions:
-        raise ValueError(f"Table {table.name} has no archived versions")
-
-    if version not in metadata_store.old_versions[table.name]:
-        raise ValueError(f"Version {version} not found")
-
     ctx = SessionContext()
     with tempfile.TemporaryDirectory() as tmpdir:
-        for p in metadata_store.old_versions[table.name][version]:
-            print(p)
-            path = os.path.join(tmpdir, f"{p['id']}.parquet")
+        for p in metadata_store.micropartitions(table, s3, version=version):
+            path = os.path.join(tmpdir, f"{p.id}.parquet")
             p.dump().write_parquet(path)
 
         ctx.register_parquet("users", tmpdir)
-
         yield ctx
 
 
@@ -302,13 +294,6 @@ def test_simple_insert():
     assert metadata_store.all(table, s3).to_dicts() == users
 
     # Dump in mem parquet files to tmp storage
-    ctx = SessionContext()
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for p in metadata_store.micropartitions(table, s3, version=1):
-            path = os.path.join(tmpdir, f"{p.id}.parquet")
-            p.dump().write_parquet(path)
-
-        ctx.register_parquet("users", tmpdir)
-
+    with build_table(table, metadata_store, s3, version=1) as ctx:
         df = ctx.sql("SELECT sum(id) FROM users")
         print(df.to_polars())
