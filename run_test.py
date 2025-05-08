@@ -10,6 +10,7 @@ from classes import ColumnDefinitions, Header, MicroPartition, Table
 from metadata import FakeMetadataStore, MetadataStore
 from s3 import FakeS3, S3Like
 from set_ops import SetOpAdd, SetOpReplace
+from compress import compress
 
 
 class Metadata:
@@ -31,22 +32,29 @@ def insert(
     buffer.seek(0)
 
     # Create a new micro partition
-    id = metadata_store.get_new_micropartition_id(table)
-    micro_partition = MicroPartition(
-        id=id,
-        header=Header(
-            columns=[col.name for col in table.columns],
-            types=[col.type for col in table.columns],
-            byte_ranges=[],
-        ),
-        data=base64.b64encode(buffer.getvalue()),
-    )
+    parts = compress(items)
+    micro_partitions = []
+    for part in parts:
+        id = metadata_store.get_new_micropartition_id(table)
+        micro_partition = MicroPartition(
+            id=id,
+            header=Header(
+                columns=[col.name for col in table.columns],
+                types=[col.type for col in table.columns],
+                byte_ranges=[],
+            ),
+            data=base64.b64encode(buffer.getvalue()),
+        )
 
-    # Try saving to S3
-    s3.put_object("bucket", str(id), micro_partition.model_dump_json().encode("utf-8"))
+        # Try saving to S3
+        s3.put_object(
+            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
+        )
+
+        micro_partitions.append(micro_partition)
 
     # Update metadata
-    metadata_store.add_micro_partition(table, current_version, micro_partition)
+    metadata_store.add_micro_partitions(table, current_version, micro_partitions)
 
 
 def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):

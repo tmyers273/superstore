@@ -12,8 +12,8 @@ class MetadataStore(Protocol):
     def get_table_version(self, table: Table) -> int:
         raise NotImplementedError
 
-    def add_micro_partition(
-        self, table: Table, version: int, micro_partition: MicroPartition
+    def add_micro_partitions(
+        self, table: Table, version: int, micro_partitions: list[MicroPartition]
     ):
         raise NotImplementedError
 
@@ -64,8 +64,8 @@ class FakeMetadataStore(MetadataStore):
 
         return self.table_versions[table.name]
 
-    def add_micro_partition(
-        self, table: Table, current_version: int, micro_partition: MicroPartition
+    def add_micro_partitions(
+        self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
         if self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
@@ -73,19 +73,19 @@ class FakeMetadataStore(MetadataStore):
         if table.name not in self.current_micro_partitions:
             self.current_micro_partitions[table.name] = []
 
-        self.raw_micro_partitions[micro_partition.id] = {
-            "id": micro_partition.id,
-            "header": micro_partition.header,
-        }
-
-        self.current_micro_partitions[table.name].append(micro_partition.id)
+        for micro_partition in micro_partitions:
+            self.raw_micro_partitions[micro_partition.id] = {
+                "id": micro_partition.id,
+                "header": micro_partition.header,
+            }
 
         self.table_versions[table.name] = current_version + 1
 
         if self.ops.get(table.name) is None:
             self.ops[table.name] = []
-
-        self.ops[table.name].append(SetOpAdd([micro_partition.id]))
+        ids = [p.id for p in micro_partitions]
+        self.ops[table.name].append(SetOpAdd(ids))
+        self.current_micro_partitions[table.name].extend(ids)
 
     def get_new_micropartition_id(self, table: Table) -> int:
         if table.name not in self.micropartition_ids:
