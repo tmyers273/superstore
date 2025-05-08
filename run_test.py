@@ -238,7 +238,7 @@ def test_simple_insert():
         assert first["name"] == "New Name"
         assert first["email"] == "new.email@example.com"
 
-    print("\n\nDumping all versions:")
+    print("\n\nDone ops. Dumping a `select *` for each version:")
     versions = metadata_store.get_table_version(table)
     for v in list(range(1, versions)) + [None]:
         with build_table(table, metadata_store, s3, version=v) as ctx:
