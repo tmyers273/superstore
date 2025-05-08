@@ -38,9 +38,23 @@ class MetadataStore(Protocol):
 class FakeMetadataStore(MetadataStore):
     def __init__(self) -> None:
         self.table_versions: dict[str, int] = {}
-        self.micro_partitions: dict[str, list[dict]] = {}
-        self.old_versions: dict[str, dict[int, list[dict]]] = {}
+        self.raw_micro_partitions: dict[int, dict] = {}
+        """
+        Keyed by the micro partition id, then the micro partition metadata items.
+        """
+        self.current_micro_partitions: dict[str, list[int]] = {}
+        """
+        Keyed by table name, then all the current micro partition ids.
+        """
+        self.old_versions: dict[str, dict[int, list[int]]] = {}
+        """
+        Keyed by the table name, then the version number, then all the micro partition ids.
+        """
         self.micropartition_ids: dict[str, int] = {}
+        """
+        Used to generate new micro partition ids.
+        Keeps track of the highest id for each table.
+        """
 
     def get_table_version(self, table: Table) -> int:
         if table.name not in self.table_versions:
@@ -57,7 +71,7 @@ class FakeMetadataStore(MetadataStore):
             raise ValueError("Version already archived")
 
         self.old_versions[table.name][current_version] = deepcopy(
-            self.micro_partitions.get(table.name, [])
+            self.current_micro_partitions.get(table.name, [])
         )
 
     def add_micro_partition(
@@ -68,15 +82,15 @@ class FakeMetadataStore(MetadataStore):
 
         self.__archive_version(table)
 
-        if table.name not in self.micro_partitions:
-            self.micro_partitions[table.name] = []
+        if table.name not in self.current_micro_partitions:
+            self.current_micro_partitions[table.name] = []
 
-        self.micro_partitions[table.name].append(
-            {
-                "id": micro_partition.id,
-                "header": micro_partition.header,
-            }
-        )
+        self.raw_micro_partitions[micro_partition.id] = {
+            "id": micro_partition.id,
+            "header": micro_partition.header,
+        }
+
+        self.current_micro_partitions[table.name].append(micro_partition.id)
 
         self.table_versions[table.name] = current_version + 1
 
@@ -96,8 +110,8 @@ class FakeMetadataStore(MetadataStore):
         """
 
         if version is None:
-            micropartitions = self.micro_partitions[table.name]
-            if table.name not in self.micro_partitions:
+            micropartitions = self.current_micro_partitions[table.name]
+            if table.name not in self.current_micro_partitions:
                 return
         else:
             if table.name not in self.old_versions:
@@ -107,7 +121,8 @@ class FakeMetadataStore(MetadataStore):
 
             micropartitions = self.old_versions[table.name][version]
 
-        for metadata in micropartitions:
+        for micro_partition_id in micropartitions:
+            metadata = self.raw_micro_partitions[micro_partition_id]
             micro_partition_raw = s3.get_object("bucket", f"{metadata['id']}")
             if micro_partition_raw is None:
                 raise ValueError(f"Micro partition `{metadata['id']}` not found")
@@ -143,19 +158,22 @@ class FakeMetadataStore(MetadataStore):
 
         self.__archive_version(table)
 
-        if table.name not in self.micro_partitions:
+        if table.name not in self.current_micro_partitions:
             raise ValueError(f"Table {table.name} has no micro partitions")
 
         # Make sure all the ids exist
+        current_ids = {p for p in self.current_micro_partitions[table.name]}
         for old_id in replacements.keys():
-            current_ids = {p["id"] for p in self.micro_partitions[table.name]}
             if old_id not in current_ids:
                 raise ValueError(f"Micro partition {old_id} not found: {current_ids}")
 
         # Replace the micro partitions in metadata
-        index = {v["id"]: i for i, v in enumerate(self.micro_partitions[table.name])}
+        index = {v: i for i, v in enumerate(self.current_micro_partitions[table.name])}
         for old_id, micro_partition in replacements.items():
-            self.micro_partitions[table.name][index[old_id]] = {
+            self.current_micro_partitions[table.name][index[old_id]] = (
+                micro_partition.id
+            )
+            self.raw_micro_partitions[micro_partition.id] = {
                 "id": micro_partition.id,
                 "header": micro_partition.header,
             }
