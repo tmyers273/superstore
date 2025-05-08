@@ -11,7 +11,7 @@ class S3Like(Protocol):
 
 class FakeS3(S3Like):
     def __init__(self):
-        self.objects = {}
+        self.objects: dict[str, dict[str, bytes]] = {}
 
     def get_object(self, bucket: str, key: str) -> bytes | None:
         if bucket not in self.objects:

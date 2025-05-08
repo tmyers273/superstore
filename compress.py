@@ -37,6 +37,10 @@ def compress(
 
         records.append((buffer.tell(), rows))
 
+    print(f"Build {len(parts)} parts from {len(df)} rows")
+    for r in records:
+        print(f"    {r[0] / 1024 / 1024:.2f}MB, {r[1]:,} rows")
+
     return parts
 
 
@@ -135,11 +139,11 @@ def test_compress():
 
     json_buf = io.BytesIO()
     json_buf.write(json.dumps(items).encode())
-    print(f"\nFull JSON size:   {json_buf.tell() / 1_000_000:.2f}MB")
+    print(f"\nFull JSON size:   {json_buf.tell() / 1024 / 1024:.2f}MB")
 
     buf = io.BytesIO()
     df.write_parquet(buf)
-    print(f"Full Parquet size: {buf.tell() / 1_000_000:.2f}MB")
+    print(f"Full Parquet size: {buf.tell() / 1024 / 1024:.2f}MB")
 
     max_file_size = 200_000
     start = perf_counter()

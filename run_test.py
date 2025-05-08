@@ -1,8 +1,11 @@
 import base64
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 import io
 import os
+import random
 import tempfile
+from time import perf_counter
 from datafusion import SessionContext
 import polars as pl
 
@@ -158,7 +161,11 @@ def update(
 
 @contextmanager
 def build_table(
-    table: Table, metadata_store: MetadataStore, s3: S3Like, version: int | None = None
+    table: Table,
+    metadata_store: MetadataStore,
+    s3: S3Like,
+    version: int | None = None,
+    table_name: str = "users",
 ):
     ctx = SessionContext()
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -166,7 +173,7 @@ def build_table(
             path = os.path.join(tmpdir, f"{p.id}.parquet")
             p.dump().write_parquet(path)
 
-        ctx.register_parquet("users", tmpdir)
+        ctx.register_parquet(table_name, tmpdir)
         yield ctx
 
 
@@ -270,3 +277,62 @@ def test_simple_insert():
 
             # print(f"\n`users` table at version {v or 'latest'}:")
             # print(df)
+
+
+def test_stress():
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+
+    table = Table(
+        name="perf",
+        columns=[
+            ColumnDefinitions(name="id", type="Int64"),
+            ColumnDefinitions(name="date", type="Date"),
+            ColumnDefinitions(name="clicks", type="Int64"),
+            ColumnDefinitions(name="impressions", type="Int64"),
+            ColumnDefinitions(name="sales", type="Int64"),
+            ColumnDefinitions(name="spend", type="Int64"),
+            ColumnDefinitions(name="orders", type="Int64"),
+        ],
+    )
+
+    print("\n")
+
+    def rnd(id) -> dict:
+        today = datetime.now()
+        v = {
+            "id": id,
+            "campaign_id": random.randint(1, 10),
+            "date": (today - timedelta(days=random.randint(0, 30))),
+            "clicks": random.randint(1, 10),
+            "impressions": random.randint(1, 1000),
+            "sales": random.randint(1, 10000),
+        }
+        id += 1
+        return v
+
+    start = perf_counter()
+    items = [rnd(i) for i in range(1_000)]
+    end = perf_counter()
+    print(f"Generate: {end - start} seconds")
+
+    df = pl.DataFrame(items)
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    start = perf_counter()
+    insert(table, s3, metadata_store, df)
+    end = perf_counter()
+    print(f"Insert: {end - start} seconds")
+
+    cnt = len(metadata_store.current_micro_partitions[table.name])
+    print(f"Micro partitions: {cnt}")
+
+    with build_table(table, metadata_store, s3, table_name="perf") as ctx:
+        start = perf_counter()
+        df = ctx.sql("SELECT sum(clicks) as clicks FROM perf")
+        end = perf_counter()
+        print(f"Query: {end - start} seconds")
+        df = df.to_polars()
+
+        print(df)
+        assert df.to_dicts()[0]["clicks"] == sum(i["clicks"] for i in items)
