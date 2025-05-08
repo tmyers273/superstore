@@ -5,9 +5,7 @@ import io
 
 
 class Header(BaseModel):
-    columns: list[str]
-    types: list[str]
-    byte_ranges: list[tuple[int, int]]
+    table_id: int
 
 
 class Column(BaseModel):
@@ -30,5 +28,6 @@ class ColumnDefinitions(BaseModel):
 
 
 class Table(BaseModel):
+    id: int
     name: str
     columns: list[ColumnDefinitions]

@@ -41,11 +41,7 @@ def insert(
         id = metadata_store.get_new_micropartition_id(table)
         micro_partition = MicroPartition(
             id=id,
-            header=Header(
-                columns=[col.name for col in table.columns],
-                types=[col.type for col in table.columns],
-                byte_ranges=[],
-            ),
+            header=Header(table_id=table.id),
             data=base64.b64encode(buffer.getvalue()),
         )
 
@@ -88,11 +84,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         id = metadata_store.get_new_micropartition_id(table)
         micro_partition = MicroPartition(
             id=id,
-            header=Header(
-                columns=[col.name for col in table.columns],
-                types=[col.type for col in table.columns],
-                byte_ranges=[],
-            ),
+            header=Header(table_id=table.id),
             data=base64.b64encode(buffer.getvalue()),
         )
 
@@ -140,11 +132,7 @@ def update(
         id = metadata_store.get_new_micropartition_id(table)
         micro_partition = MicroPartition(
             id=id,
-            header=Header(
-                columns=[col.name for col in table.columns],
-                types=[col.type for col in table.columns],
-                byte_ranges=[],
-            ),
+            header=Header(table_id=table.id),
             data=base64.b64encode(buffer.getvalue()),
         )
 
@@ -183,6 +171,7 @@ def test_simple_insert():
     s3 = FakeS3()
 
     table = Table(
+        id=1,
         name="users",
         columns=[
             ColumnDefinitions(name="id", type="Int64"),
@@ -284,6 +273,7 @@ def test_stress():
     s3 = FakeS3()
 
     table = Table(
+        id=1,
         name="perf",
         columns=[
             ColumnDefinitions(name="id", type="Int64"),
