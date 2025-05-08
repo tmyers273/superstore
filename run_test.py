@@ -9,6 +9,7 @@ import polars as pl
 from classes import ColumnDefinitions, Header, MicroPartition, Table
 from metadata import FakeMetadataStore, MetadataStore
 from s3 import FakeS3, S3Like
+from set_ops import SetOpAdd, SetOpReplace
 
 
 class Metadata:
@@ -113,8 +114,8 @@ def update(
 
         # TODO: only flag this for an update if something actually changed
 
-        # Skip if no rows were deleted from this micro partition
-        if len(df) == 0:
+        # Skip if no rows were changed from this micro partition
+        if len(updated_items) == 0:
             continue
 
         # Merge the new items
@@ -186,6 +187,7 @@ def test_simple_insert():
 
     # Expect the table version to be incremented
     assert metadata_store.get_table_version(table) == 1
+    assert metadata_store.ops[table.name] == [SetOpAdd([0])]
 
     for p in metadata_store.micropartitions(table, s3):
         assert p.dump().to_dicts() == users
@@ -196,6 +198,7 @@ def test_simple_insert():
     insert(table, s3, metadata_store, df)
 
     assert metadata_store.get_table_version(table) == 2
+    assert metadata_store.ops[table.name] == [SetOpAdd([0]), SetOpAdd([1])]
 
     for i, p in enumerate(metadata_store.micropartitions(table, s3)):
         if i == 0:
@@ -214,6 +217,11 @@ def test_simple_insert():
 
     delete(table, s3, metadata_store, [3])
     assert metadata_store.get_table_version(table) == 3
+    assert metadata_store.ops[table.name] == [
+        SetOpAdd([0]),
+        SetOpAdd([1]),
+        SetOpReplace([(0, 2)]),
+    ]
 
     with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
@@ -228,6 +236,13 @@ def test_simple_insert():
         metadata_store,
         pl.DataFrame([{"id": 1, "name": "New Name", "email": "new.email@example.com"}]),
     )
+
+    assert metadata_store.ops[table.name] == [
+        SetOpAdd([0]),
+        SetOpAdd([1]),
+        SetOpReplace([(0, 2)]),
+        SetOpReplace([(2, 3)]),
+    ]
 
     with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")

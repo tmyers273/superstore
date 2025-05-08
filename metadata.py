@@ -5,6 +5,8 @@ from classes import MicroPartition, Table
 from s3 import S3Like
 import polars as pl
 
+from set_ops import SetOp, SetOpAdd, SetOpReplace, apply
+
 
 class MetadataStore(Protocol):
     def get_table_version(self, table: Table) -> int:
@@ -46,14 +48,14 @@ class FakeMetadataStore(MetadataStore):
         """
         Keyed by table name, then all the current micro partition ids.
         """
-        self.old_versions: dict[str, dict[int, list[int]]] = {}
-        """
-        Keyed by the table name, then the version number, then all the micro partition ids.
-        """
         self.micropartition_ids: dict[str, int] = {}
         """
         Used to generate new micro partition ids.
         Keeps track of the highest id for each table.
+        """
+        self.ops: dict[str, list[SetOp]] = {}
+        """
+        Keyed by the table name, then the list of operations.
         """
 
     def get_table_version(self, table: Table) -> int:
@@ -62,25 +64,11 @@ class FakeMetadataStore(MetadataStore):
 
         return self.table_versions[table.name]
 
-    def __archive_version(self, table: Table):
-        if table.name not in self.old_versions:
-            self.old_versions[table.name] = {}
-
-        current_version = self.get_table_version(table)
-        if current_version in self.old_versions[table.name]:
-            raise ValueError("Version already archived")
-
-        self.old_versions[table.name][current_version] = deepcopy(
-            self.current_micro_partitions.get(table.name, [])
-        )
-
     def add_micro_partition(
         self, table: Table, current_version: int, micro_partition: MicroPartition
     ):
         if self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
-
-        self.__archive_version(table)
 
         if table.name not in self.current_micro_partitions:
             self.current_micro_partitions[table.name] = []
@@ -93,6 +81,11 @@ class FakeMetadataStore(MetadataStore):
         self.current_micro_partitions[table.name].append(micro_partition.id)
 
         self.table_versions[table.name] = current_version + 1
+
+        if self.ops.get(table.name) is None:
+            self.ops[table.name] = []
+
+        self.ops[table.name].append(SetOpAdd([micro_partition.id]))
 
     def get_new_micropartition_id(self, table: Table) -> int:
         if table.name not in self.micropartition_ids:
@@ -114,13 +107,12 @@ class FakeMetadataStore(MetadataStore):
             if table.name not in self.current_micro_partitions:
                 return
         else:
-            if table.name not in self.old_versions:
+            if table.name not in self.ops:
                 raise ValueError(f"Table {table.name} has no archived versions")
-            if version not in self.old_versions[table.name]:
+            if len(self.ops[table.name]) < version:
                 raise ValueError(f"Version {version} not found")
 
-            micropartitions = self.old_versions[table.name][version]
-
+            micropartitions = list(apply(set(), self.ops[table.name][:version]))
         for micro_partition_id in micropartitions:
             metadata = self.raw_micro_partitions[micro_partition_id]
             micro_partition_raw = s3.get_object("bucket", f"{metadata['id']}")
@@ -156,8 +148,6 @@ class FakeMetadataStore(MetadataStore):
         if self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
-        self.__archive_version(table)
-
         if table.name not in self.current_micro_partitions:
             raise ValueError(f"Table {table.name} has no micro partitions")
 
@@ -179,3 +169,13 @@ class FakeMetadataStore(MetadataStore):
             }
 
         self.table_versions[table.name] = current_version + 1
+
+        # Construct a list of the replacements
+        if self.ops.get(table.name) is None:
+            self.ops[table.name] = []
+
+        r = [
+            (old_id, micro_partition.id)
+            for old_id, micro_partition in replacements.items()
+        ]
+        self.ops[table.name].append(SetOpReplace(r))
