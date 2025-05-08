@@ -23,14 +23,25 @@ def compress(
 
     min = int(round(max_file_size * (1 - tolerance), 0))
     max = max_file_size
-    start: int | None = None
+
+    # Track compression ratio for better estimates
+    bytes_per_row = None
+
+    row_counts: list[int] = []
+    records: list[tuple[int, int]] = []
 
     while len(df) > 0:
+        avg_bytes_per_row = (
+            sum(r[0] for r in records) / sum(r[1] for r in records) if records else None
+        )
+        # print(f"Starting bytes_per_row: {bytes_per_row} vs {avg_bytes_per_row}")
         start_time = perf_counter()
-        buffer, rows = guess_and_check(df, min, max, start)
-        start = rows
+        buffer, rows = ratio_based_compress(df, min, max, avg_bytes_per_row)
+        row_counts.append(rows)
+        records.append((buffer.tell(), rows))
+
         end_time = perf_counter()
-        print(f"Compressed {rows} rows in {(end_time - start_time) * 1000:.0f}ms")
+        # print(f"    Compressed {rows} rows in {(end_time - start_time) * 1000:.0f}ms")
         df = df.slice(rows)
 
         parts.append(buffer)
@@ -38,76 +49,87 @@ def compress(
     return parts
 
 
-def guess_and_check(
-    df: pl.DataFrame, min: int, max: int, start: int | None = None
+def ratio_based_compress(
+    df: pl.DataFrame, min_size: int, max_size: int, bytes_per_row: float | None = None
 ) -> tuple[io.BytesIO, int]:
     """
-    Guesses the size of the dataframe and checks if it's within the given tolerance.
-
-    Runs a binary search to find an output that is within the given min and max.
+    Compresses the dataframe using compression ratio estimation.
 
     Returns a tuple containing:
     - BytesIO buffer with the compressed data
     - Number of rows used from the original dataframe
+    - Updated bytes per row estimate
 
     If even a single row exceeds max size, returns an empty buffer with 0 rows.
     """
-    low = 1
-    high = len(df)
-
-    # If start is passed, we want the mid to be that
-    if start is not None:
-        low = (start * 2) - high
-    print(
-        f"BEFORE STARTING: low={low}, high={high}, start={start}, mid={(low + high) // 2}"
-    )
-
     buffer = io.BytesIO()
 
     # Check if even a single row exceeds max
-    if high > 0:
-        test_buffer = compress_part(df.slice(0, 1))
-        if test_buffer.tell() > max:
-            # If a single row is too big, return empty buffer with 0 rows
-            return io.BytesIO(), 0
+    if len(df) == 0:
+        raise ValueError("No rows to compress")
 
-    while low <= high:
-        mid = (low + high) // 2
-        print(f"    Mid is {mid}, start is {start}, low is {low}, high is {high}")
-        test_slice = df.slice(0, mid)
+    if bytes_per_row is None:
+        test_buffer = compress_part(df.slice(0, 1))
+        single_row_size = test_buffer.tell()
+        bytes_per_row = single_row_size
+
+    # Make an initial estimate based on bytes_per_row
+    estimated_rows = min(len(df), int(max_size / bytes_per_row))
+
+    # We'll need at least one row
+    estimated_rows = max(1, estimated_rows)
+
+    # Start with our estimate, then adjust if needed
+    rows = estimated_rows
+    i = 0
+    while True:
+        # print(f"    {i}")
+        test_slice = df.slice(0, rows)
+        # start_t = perf_counter()
         compress_part(test_slice, buffer)
+        # compress_t = (perf_counter() - start_t) * 1000
         size = buffer.tell()
 
-        if size <= max:
-            # This slice works, but might not be optimal
-            if size >= min:
-                # Size is within our tolerance range, return early
-                print(f"        good size ({min} <= {size} <= {max}), returning")
-                return buffer, mid
+        # Update our bytes_per_row estimate
+        new_bytes_per_row = size / rows if rows > 0 else 0
 
-            # Try a larger slice
-            low = mid + 1
-            print(f"        too small ({size} < {min}), trying larger")
+        if size <= max_size:
+            # This slice works
+            if size >= min_size or rows == len(df):
+                # Size is within our tolerance range or we've used all rows
+                return buffer, rows
+
+            # Try to add more rows based on our refined estimate
+            additional_rows = int((max_size - size) / new_bytes_per_row * 1.2)
+            if additional_rows == 0:
+                # Can't add more rows within tolerance
+                return buffer, rows
+
+            rows = min(len(df), rows + additional_rows)
+            # print(
+            #     f"    too small, adding {additional_rows} rows (new rows: {rows}, size: {size}, min: {min_size}, max: {max_size})"
+            # )
         else:
-            # This slice is too big, try a smaller one
-            high = mid - 1
-            print(f"        too big ({size} > {max}), trying smaller")
+            # Too big, scale back
+            rows_to_remove = int((size - max_size) / new_bytes_per_row * 1.2) + 1
+            rows = max(1, rows - rows_to_remove)
 
-    # If we couldn't find a size in the acceptable range, return the largest slice under min
-    if high > 0:
-        print("===========")
-        buffer = compress_part(df.slice(0, high))
-        return buffer, high
+            # If we're only using one row and it's still too big, something's wrong
+            if rows == 1:
+                # print(f"Warning: Single row is unexpectedly large ({size} bytes)")
+                return buffer, 1
 
-    # Couldn't fit anything
-    return io.BytesIO(), 0
+            # print(
+            #     f"    too big, removing {rows_to_remove} rows (new rows: {rows}, size: {size}, min: {min_size}, max: {max_size})"
+            # )
+
+        i += 1
 
 
 def compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.BytesIO:
     """
     Compresses the given dataframe into a parquet file.
     """
-    # start = perf_counter()
     if buffer is None:
         buffer = io.BytesIO()
     else:
@@ -115,14 +137,12 @@ def compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.Byte
         buffer.truncate(0)
 
     df.write_parquet(buffer)
-    # end = perf_counter()
-    # print(f"Compressed {len(df)} rows in {(end - start) * 1000:.0f}ms")
     return buffer
 
 
 def test_compress():
     items = []
-    for i in range(1000_000):
+    for i in range(1_000_000):
         items.append(
             {
                 "id": i,
@@ -135,11 +155,11 @@ def test_compress():
 
     json_buf = io.BytesIO()
     json_buf.write(json.dumps(items).encode())
-    print(f"\nFull JSON size: {json_buf.tell()} bytes")
+    print(f"\nFull JSON size:   {json_buf.tell() / 1_000_000:.2f}MB")
 
     buf = io.BytesIO()
     df.write_parquet(buf)
-    print(f"Full Parquet size: {buf.tell()} bytes")
+    print(f"Full Parquet size: {buf.tell() / 1_000_000:.2f}MB")
 
     max_file_size = 200_000
     start = perf_counter()
