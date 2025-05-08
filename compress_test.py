@@ -24,32 +24,23 @@ def compress(
     min = int(round(max_file_size * (1 - tolerance), 0))
     max = max_file_size
 
-    # Track compression ratio for better estimates
-    bytes_per_row = None
-
-    row_counts: list[int] = []
     records: list[tuple[int, int]] = []
 
     while len(df) > 0:
         avg_bytes_per_row = (
             sum(r[0] for r in records) / sum(r[1] for r in records) if records else None
         )
-        # print(f"Starting bytes_per_row: {bytes_per_row} vs {avg_bytes_per_row}")
-        start_time = perf_counter()
-        buffer, rows = ratio_based_compress(df, min, max, avg_bytes_per_row)
-        row_counts.append(rows)
-        records.append((buffer.tell(), rows))
 
-        end_time = perf_counter()
-        # print(f"    Compressed {rows} rows in {(end_time - start_time) * 1000:.0f}ms")
+        buffer, rows = _ratio_based_compress(df, min, max, avg_bytes_per_row)
+        parts.append(buffer)
         df = df.slice(rows)
 
-        parts.append(buffer)
+        records.append((buffer.tell(), rows))
 
     return parts
 
 
-def ratio_based_compress(
+def _ratio_based_compress(
     df: pl.DataFrame, min_size: int, max_size: int, bytes_per_row: float | None = None
 ) -> tuple[io.BytesIO, int]:
     """
@@ -69,7 +60,7 @@ def ratio_based_compress(
         raise ValueError("No rows to compress")
 
     if bytes_per_row is None:
-        test_buffer = compress_part(df.slice(0, 1))
+        test_buffer = _compress_part(df.slice(0, 1))
         single_row_size = test_buffer.tell()
         bytes_per_row = single_row_size
 
@@ -83,11 +74,8 @@ def ratio_based_compress(
     rows = estimated_rows
     i = 0
     while True:
-        # print(f"    {i}")
         test_slice = df.slice(0, rows)
-        # start_t = perf_counter()
-        compress_part(test_slice, buffer)
-        # compress_t = (perf_counter() - start_t) * 1000
+        _compress_part(test_slice, buffer)
         size = buffer.tell()
 
         # Update our bytes_per_row estimate
@@ -106,9 +94,6 @@ def ratio_based_compress(
                 return buffer, rows
 
             rows = min(len(df), rows + additional_rows)
-            # print(
-            #     f"    too small, adding {additional_rows} rows (new rows: {rows}, size: {size}, min: {min_size}, max: {max_size})"
-            # )
         else:
             # Too big, scale back
             rows_to_remove = int((size - max_size) / new_bytes_per_row * 1.2) + 1
@@ -116,17 +101,12 @@ def ratio_based_compress(
 
             # If we're only using one row and it's still too big, something's wrong
             if rows == 1:
-                # print(f"Warning: Single row is unexpectedly large ({size} bytes)")
                 return buffer, 1
-
-            # print(
-            #     f"    too big, removing {rows_to_remove} rows (new rows: {rows}, size: {size}, min: {min_size}, max: {max_size})"
-            # )
 
         i += 1
 
 
-def compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.BytesIO:
+def _compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.BytesIO:
     """
     Compresses the given dataframe into a parquet file.
     """
