@@ -91,11 +91,11 @@ class SqliteMetadata(MetadataStore):
             return int(table_version.version)
 
     def add_micro_partitions(
-        self, table: Table, version: int, micro_partitions: list[MicroPartition]
+        self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
         with Session(self.engine) as session:
-            current_version = self.get_table_version(table)
-            if current_version != version:
+            if self.get_table_version(table) != current_version:
+                session.rollback()
                 raise ValueError("Version mismatch")
 
             # Add micro partition metadata
@@ -116,8 +116,7 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            table_version = session.get(TableVersion, table.name)
-            table_version.version = version + 1
+            self.bump_table_version(session, table, version)
 
             session.commit()
 
@@ -134,6 +133,17 @@ class SqliteMetadata(MetadataStore):
 
         return out
 
+    def bump_table_version(self, session: Session, table: Table, current_version: int):
+        table_version = session.get(TableVersion, table.name)
+        if table_version is None:
+            table_version = TableVersion(table_name=table.name, version=0)
+            session.add(table_version)
+        elif table_version.version != current_version:
+            session.rollback()
+            raise ValueError("Version mismatch")
+
+        table_version.version = current_version + 1
+
     def replace_micro_partitions(
         self,
         table: Table,
@@ -142,6 +152,7 @@ class SqliteMetadata(MetadataStore):
     ):
         with Session(self.engine) as session:
             if self.get_table_version(table) != current_version:
+                session.rollback()
                 raise ValueError("Version mismatch")
 
             # Add new micro partition metadata
@@ -161,8 +172,7 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            table_version = session.get(TableVersion, table.name)
-            table_version.version = current_version + 1
+            self.bump_table_version(session, table, current_version)
 
             session.commit()
 
