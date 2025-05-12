@@ -13,12 +13,32 @@ class Column(BaseModel):
     data: bytes
 
 
+class ColumnStatistics[T](BaseModel):
+    index: int
+    name: str
+    min: T
+    max: T
+    null_count: int
+
+
+class Statistics(BaseModel):
+    rows: int
+    filesize: int
+    columns: list[ColumnStatistics]
+
+    def dump(self):
+        print("Rows: ", self.rows)
+        print("Filesize: ", self.filesize)
+        for col in self.columns:
+            print(f"  {col.name}({col.min} - {col.max}, nulls = {col.null_count})")
+
+
 class MicroPartition(BaseModel):
     id: int
     header: Header
     data: bytes
 
-    def statistics(self) -> list[dict]:
+    def statistics(self) -> Statistics:
         data = base64.b64decode(self.data)
         buffer = io.BytesIO(data)
 
@@ -26,27 +46,39 @@ class MicroPartition(BaseModel):
         parquet_file = pq.ParquetFile(buffer)
         metadata = parquet_file.metadata
 
-        # Print metadata and statistics
-        print("\nParquet Metadata:")
-        print(f"Number of rows: {metadata.num_rows}")
-        print(f"Number of row groups: {metadata.num_row_groups}")
-        print(f"Created by: {metadata.created_by}")
-        print(f"Schema: {metadata.schema}")
-
         # Print column statistics for each row group
+        cols = {}
         for i in range(metadata.num_row_groups):
-            print(f"\nRow Group {i} Statistics:")
             row_group_metadata = metadata.row_group(i)
             for j in range(row_group_metadata.num_columns):
                 col_metadata = row_group_metadata.column(j)
+                name = col_metadata.path_in_schema
+                if name not in cols:
+                    cols[name] = ColumnStatistics(
+                        name=name, index=i, min=None, max=None, null_count=0
+                    )
+
                 stats = col_metadata.statistics
                 if stats:
-                    print(f"\nColumn: {col_metadata.path_in_schema}")
-                    print(f"  Min: {stats.min}")
-                    print(f"  Max: {stats.max}")
-                    print(f"  Null count: {stats.null_count}")
+                    if cols[name].min is not None:
+                        cols[name].min = min(stats.min, cols[name].min)
+                    else:
+                        cols[name].min = stats.min
 
-        return []
+                    if cols[name].max is None:
+                        cols[name].max = stats.max
+                    else:
+                        cols[name].max = max(stats.max, cols[name].max)
+                    cols[name].null_count += stats.null_count
+
+        cols = list(cols.values())
+        cols.sort(key=lambda x: x.index)
+
+        return Statistics(
+            rows=metadata.num_rows,
+            filesize=metadata.serialized_size,
+            columns=cols,
+        )
 
     def dump(self) -> pl.DataFrame:
         data = base64.b64decode(self.data)
