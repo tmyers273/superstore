@@ -10,6 +10,22 @@ from set_ops import SetOp, SetOpAdd, SetOpReplace, apply
 
 class MetadataStore(Protocol):
     def get_table_version(self, table: Table) -> int:
+        """
+        Returns the current version of the table, creating it
+        and returning 0 if it doesn't exist.
+        """
+        raise NotImplementedError
+
+    def get_ops(self, table: Table) -> list[SetOp]:
+        """
+        Returns the list of operations for the table.
+        """
+        raise NotImplementedError
+
+    def get_op(self, table: Table, version: int) -> SetOp | None:
+        """
+        Returns the operation for the table at the given version.
+        """
         raise NotImplementedError
 
     def add_micro_partitions(
@@ -62,6 +78,15 @@ class FakeMetadataStore(MetadataStore):
         """
         Keyed by the table name, then the list of operations.
         """
+
+    def get_ops(self, table: Table) -> list[SetOp]:
+        return self.ops[table.name]
+
+    def get_op(self, table: Table, version: int) -> SetOp | None:
+        if version in self.ops[table.name]:
+            return self.ops[table.name][version]
+        else:
+            return None
 
     def get_table_version(self, table: Table) -> int:
         if table.name not in self.table_versions:

@@ -9,4 +9,6 @@ dependencies = [
     "polars>=1.29.0",
     "pydantic>=2.11.4",
     "pytest-watch>=4.2.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.9",
 ]
