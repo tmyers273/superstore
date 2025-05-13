@@ -40,8 +40,7 @@ class MicroPartition(BaseModel):
     data: bytes
 
     def statistics(self) -> Statistics:
-        data = base64.b64decode(self.data)
-        buffer = io.BytesIO(data)
+        buffer = io.BytesIO(self.data)
 
         # Read the parquet file metadata
         parquet_file = pq.ParquetFile(buffer)
@@ -78,13 +77,12 @@ class MicroPartition(BaseModel):
         return Statistics(
             id=self.id,
             rows=metadata.num_rows,
-            filesize=len(data),
+            filesize=len(self.data),
             columns=cols,
         )
 
     def dump(self) -> pl.DataFrame:
-        data = base64.b64decode(self.data)
-        buffer = io.BytesIO(data)
+        buffer = io.BytesIO(self.data)
 
         # Reset buffer position and read the dataframe
         buffer.seek(0)
