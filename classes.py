@@ -75,14 +75,10 @@ class MicroPartition(BaseModel):
         cols = list(cols.values())
         cols.sort(key=lambda x: x.index)
 
-        print(
-            f"Size for {self.id}: {metadata.serialized_size} vs buffer len of {len(data)} w/ {metadata.num_row_groups} row groups"
-        )
-
         return Statistics(
             id=self.id,
             rows=metadata.num_rows,
-            filesize=metadata.serialized_size,
+            filesize=len(data),
             columns=cols,
         )
 
