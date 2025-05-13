@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from .classes import ColumnDefinitions, Database, Schema, Table
@@ -8,6 +9,15 @@ from .sqlite_metadata import SqliteMetadata
 
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5174"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
 s3 = LocalS3("ams_scratch/mps")
 
@@ -15,6 +25,32 @@ s3 = LocalS3("ams_scratch/mps")
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
+
+
+@app.get("/table/{table_id}")
+async def table(table_id: int):
+    print(metadata.get_tables())
+    table = metadata.get_table("sp-traffic")
+    if table is None:
+        return {"error": "Table not found"}
+
+    mps = []
+    total_rows = 0
+    total_filesize = 0
+    for mp in metadata.micropartitions(table, s3):
+        raw = mp.model_dump()
+        del raw["data"]
+        stats = mp.statistics()
+        total_rows += stats.rows
+        total_filesize += stats.filesize
+        raw["stats"] = stats.model_dump()
+        mps.append(raw)
+
+    out = table.model_dump()
+    out["mps"] = mps
+    out["total_rows"] = total_rows
+    out["total_filesize"] = total_filesize
+    return out
 
 
 @app.get("/databases")
@@ -51,31 +87,27 @@ async def databases():
     schemas = metadata.get_schemas()
     tables = metadata.get_tables()
 
-    # Nest the schemas under the database
-    dbs = {db.id: db.model_dump() for db in databases}
-    for schema in schemas:
-        if schema.database_id not in dbs:
-            raise ValueError(
-                f"Schema {schema.name} has database id {schema.database_id} but no database with that id"
-            )
-        if "schemas" not in dbs[schema.database_id]:
-            dbs[schema.database_id]["schemas"] = {}
-        dbs[schema.database_id]["schemas"][schema.id] = schema.model_dump()
+    # Create a nested structure using list comprehensions
+    dbs = [
+        {
+            **db.model_dump(),
+            "schemas": [
+                {
+                    **schema.model_dump(),
+                    "tables": [
+                        table.model_dump()
+                        for table in tables
+                        if table.schema_id == schema.id and table.database_id == db.id
+                    ],
+                }
+                for schema in schemas
+                if schema.database_id == db.id
+            ],
+        }
+        for db in databases
+    ]
 
-    print(dbs)
-    for table in tables:
-        if table.schema_id not in dbs[table.database_id]["schemas"]:
-            raise ValueError(
-                f"Table {table.name} has schema id {table.schema_id} but no schema with that id"
-            )
-        if "tables" not in dbs[table.database_id]["schemas"][table.schema_id]:
-            dbs[table.database_id]["schemas"][table.schema_id]["tables"] = {}
-
-        dbs[table.database_id]["schemas"][table.schema_id]["tables"][table.id] = (
-            table.model_dump()
-        )
-
-    return dbs
+    return {"databases": dbs}
 
 
 if __name__ == "__main__":
