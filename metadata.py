@@ -1,7 +1,7 @@
 from copy import deepcopy
 import json
 from typing import Generator, Protocol
-from .classes import MicroPartition, Table
+from .classes import Database, MicroPartition, Schema, Table
 from .s3 import S3Like
 import polars as pl
 
@@ -9,10 +9,57 @@ from .set_ops import SetOp, SetOpAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):
-    def get_table_version(self, table: Table) -> int:
+    def create_database(self, database: Database) -> Database:
         """
-        Returns the current version of the table, creating it
-        and returning 0 if it doesn't exist.
+        Create a new database.
+        """
+        raise NotImplementedError
+
+    def get_databases(self) -> list[Database]:
+        """
+        Returns a list of all the databases.
+        """
+        raise NotImplementedError
+
+    def get_database(self, name: str) -> Database | None:
+        """
+        Returns the database with the given name.
+        """
+        raise NotImplementedError
+
+    def create_schema(self, schema: Schema) -> Schema:
+        """
+        Create a new schema.
+        """
+        raise NotImplementedError
+
+    def get_schemas(self) -> list[Schema]:
+        """
+        Returns a list of all the schemas.
+        """
+        raise NotImplementedError
+
+    def get_schema(self, name: str) -> Schema | None:
+        """
+        Returns the schema with the given name.
+        """
+        raise NotImplementedError
+
+    def create_table(self, table: Table) -> Table:
+        """
+        Create a new table.
+        """
+        raise NotImplementedError
+
+    def get_tables(self) -> list[Table]:
+        """
+        Returns a list of all the tables.
+        """
+        raise NotImplementedError
+
+    def get_table(self, name: str) -> Table | None:
+        """
+        Returns the table with the given name.
         """
         raise NotImplementedError
 
@@ -78,6 +125,51 @@ class FakeMetadataStore(MetadataStore):
         """
         Keyed by the table name, then the list of operations.
         """
+        self.databases: dict[str, Database] = {}
+        """
+        Keyed by the database name, then the database.
+        """
+        self.schemas: dict[str, Schema] = {}
+        """
+        Keyed by the schema name, then the schema.
+        """
+        self.tables: dict[str, Table] = {}
+        """
+        Keyed by the table name, then the table.
+        """
+
+    def create_database(self, database: Database) -> Database:
+        database.id = len(self.databases) + 1
+        self.databases[database.name] = database
+        return database
+
+    def get_databases(self) -> list[Database]:
+        return list(self.databases.values())
+
+    def get_database(self, name: str) -> Database | None:
+        return self.databases.get(name)
+
+    def create_schema(self, schema: Schema) -> Schema:
+        schema.id = len(self.schemas) + 1
+        self.schemas[schema.name] = schema
+        return schema
+
+    def get_schemas(self) -> list[Schema]:
+        return list(self.schemas.values())
+
+    def get_schema(self, name: str) -> Schema | None:
+        return self.schemas.get(name)
+
+    def create_table(self, table: Table) -> Table:
+        table.id = len(self.tables) + 1
+        self.tables[table.name] = table
+        return table
+
+    def get_tables(self) -> list[Table]:
+        return list(self.tables.values())
+
+    def get_table(self, name: str) -> Table | None:
+        return self.tables.get(name)
 
     def get_ops(self, table: Table) -> list[SetOp]:
         return self.ops[table.name]
