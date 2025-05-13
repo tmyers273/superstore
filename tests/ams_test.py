@@ -1,17 +1,20 @@
 import base64
 import io
 import json
+import logging
 import os
 from time import perf_counter
 import polars as pl
 import pytest
+
+from ..compress import compress
 
 from ..sweep import find_ids_with_most_overlap
 
 from ..classes import ColumnDefinitions, Table, Database, Schema
 from ..local_s3 import LocalS3
 from ..metadata import FakeMetadataStore, MetadataStore
-from .run_test import build_table, insert
+from .run_test import build_table, delete_and_add, insert
 from ..s3 import FakeS3
 from ..sqlite_metadata import SqliteMetadata
 
@@ -88,6 +91,72 @@ def cleanup():
     os.remove("ams_scratch/ams.db")
 
 
+# @pytest.mark.skip(reason="Skipping ams test")
+def test_query_time():
+    start = perf_counter()
+    metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
+    table = create_table_if_needed(metadata)
+    s3 = LocalS3("ams_scratch/mps")
+
+    for mp in metadata.micropartitions(table, s3):
+        stats = mp.statistics()
+        for col in stats.columns:
+            if col.name == "advertiser_id":
+                print(f"{mp.id}: {col.min} - {col.max}")
+                break
+
+    # return
+
+    # 24ms - raw
+    # 19ms, 17s - after one
+    # 15ms after 2
+    # 18ms
+    # 15ms
+    # 13ms
+    # 14ms
+    # 15ms
+    # 12ms
+
+    print(f"Starting to build table: {(perf_counter() - start) * 1000:.0f}ms")
+    with build_table(table, metadata, s3, table_name="sp-traffic") as ctx:
+        print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
+        s = perf_counter()
+        df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
+        df = df.to_polars()
+        e = perf_counter()
+
+        print(f"Time: {(e - s) * 1000:.0f}ms")
+        print(df)
+
+        s = perf_counter()
+        df = ctx.sql(
+            "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
+        )
+        df = df.to_polars()
+        e = perf_counter()
+
+        print(f"Time: {(e - s) * 1000:.0f}ms")
+        print(df)
+
+        s = perf_counter()
+        df = ctx.sql(
+            "SELECT sum(clicks), sum(impressions), sum(cost) FROM 'sp-traffic' WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'"
+        )
+        # print(df.explain(verbose=True, analyze=True))
+        df = df.to_polars()
+        e = perf_counter()
+
+        print(f"Time: {(e - s) * 1000:.0f}ms")
+        print(df)
+
+        logging.basicConfig(level=logging.DEBUG)
+
+        # plan = ctx.sql(
+        #     "EXPLAIN FORMAT TREE SELECT sum(clicks), sum(impressions), sum(cost) FROM 'sp-traffic' WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'"
+        # )
+        # print(plan)
+
+
 @pytest.mark.skip(reason="Skipping ams test")
 def test_clustering():
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
@@ -134,7 +203,7 @@ def test_clustering():
     total_size = 0
     for i, overlap in enumerate(overlaps):
         total_size += overlap.filesize
-        if total_size > 64 * 1024 * 1024:
+        if total_size > 16 * 64 * 1024 * 1024:
             break
 
     print(f"Found a total of{len(overlaps)} overlapping MPs")
@@ -151,8 +220,7 @@ def test_clustering():
             raise Exception(f"Micropartition {overlap.id} not found")
 
         mp = json.loads(mp)["data"]
-        data = base64.b64decode(mp)
-        buffer = io.BytesIO(data)
+        buffer = io.BytesIO(mp)
 
         # Reset buffer position and read the dataframe
         buffer.seek(0)
@@ -169,20 +237,10 @@ def test_clustering():
         raise Exception("Rows mismatch")
 
     df = df.sort(["advertiser_id", "time_window_start"])
+    delete_ids = [overlap.id for overlap in overlaps]
+    delete_and_add(table, s3, metadata, delete_ids, df)
 
-    current_version = metadata.get_table_version(table)
-    # TODO: replace needs to take a list of
-    # metadata.replace_micro_partitions(
-    #     table,
-    #     current_version,
-    #     {
-    #         mp.id: MicroPartition(
-    #             id=mp.id,
-    #             data=mp.data,
-    #         )
-    #     },
-    print(df)
-    df.write_parquet("ams_scratch/sp-traffic.parquet")
+    print(metadata.get_ops(table)[-5:])
 
 
 @pytest.mark.skip(reason="Skipping ams test")
@@ -206,7 +264,7 @@ def test_ams():
     for i, file in enumerate(files):
         print(f"Processing {file} ({i + 1}/{len(files)})")
         df = pl.read_parquet(file)
-        if i > 100:
+        if i > 115:
             break
 
         df = pl.read_parquet(file)

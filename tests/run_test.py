@@ -13,9 +13,10 @@ from ..classes import ColumnDefinitions, Header, MicroPartition, Table
 from ..local_s3 import LocalS3
 from ..metadata import FakeMetadataStore, MetadataStore
 from ..s3 import FakeS3, S3Like
-from ..set_ops import SetOpAdd, SetOpReplace
+from ..set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
 from ..compress import compress
 from ..sqlite_metadata import SqliteMetadata
+import pyarrow.dataset as ds
 
 
 class Metadata:
@@ -44,13 +45,11 @@ def insert(
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=base64.b64encode(buffer.getvalue()),
+            data=buffer.getvalue(),
         )
 
         # Try saving to S3
-        s3.put_object(
-            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
-        )
+        s3.put_object("bucket", str(id), buffer.getvalue())
 
         micro_partitions.append(micro_partition)
 
@@ -87,18 +86,53 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=base64.b64encode(buffer.getvalue()),
+            data=buffer.getvalue(),
         )
 
         # Try saving to S3
-        s3.put_object(
-            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
-        )
+        s3.put_object("bucket", str(id), buffer.getvalue())
 
         replacements[p.id] = micro_partition
 
     # Update metadata
     metadata_store.replace_micro_partitions(table, current_version, replacements)
+
+
+def delete_and_add(
+    table: Table,
+    s3: S3Like,
+    metadata_store: MetadataStore,
+    delete_ids: list[int],
+    new_df: pl.DataFrame,
+):
+    current_version = metadata_store.get_table_version(table)
+
+    mps = []
+
+    print("Compressing new df", new_df, type(new_df))
+    dfs = compress(new_df)
+    print("dfs:", len(dfs))
+    current_id = metadata_store.get_new_micropartition_id(table)
+    for i, buffer in enumerate(dfs):
+        id = current_id + i
+        print("buffer:", buffer.tell())
+        # buffer.seek(0)
+
+        # Create a new micro partition
+        micro_partition = MicroPartition(
+            id=id,
+            header=Header(table_id=table.id),
+            data=buffer.getvalue(),
+        )
+        print("new mpi id:", id + i)
+        mps.append(micro_partition)
+
+        # Try saving to S3
+        s3.put_object("bucket", str(id), buffer.getvalue())
+
+    metadata_store.delete_and_add_micro_partitions(
+        table, current_version, delete_ids, mps
+    )
 
 
 def update(
@@ -135,13 +169,11 @@ def update(
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=base64.b64encode(buffer.getvalue()),
+            data=buffer.getvalue(),
         )
 
         # Try saving to S3
-        s3.put_object(
-            "bucket", str(id), micro_partition.model_dump_json().encode("utf-8")
-        )
+        s3.put_object("bucket", str(id), buffer.getvalue())
 
         replacements[p.id] = micro_partition
 
@@ -158,10 +190,22 @@ def build_table(
     table_name: str = "users",
 ):
     ctx = SessionContext()
+    # allowed = {169, 170, 171}
     with tempfile.TemporaryDirectory() as tmpdir:
         for p in metadata_store.micropartitions(table, s3, version=version):
             path = os.path.join(tmpdir, f"{p.id}.parquet")
             p.dump().write_parquet(path)
+
+        # wanted_ids = []
+        # for p in metadata_store.micropartitions(table, s3, version=version):
+        #     path = os.path.join(tmpdir, f"{p.id}.parquet")
+        #     p.dump().write_parquet(path)
+        #     wanted_ids.append(p.id)
+
+        # base_dir = "ams_scratch/mps/bucket"
+        # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+        # dataset = ds.dataset(paths, format="parquet")
+        # ctx.register_dataset(table_name, dataset)
 
         ctx.register_parquet(table_name, tmpdir)
         yield ctx
@@ -242,6 +286,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         pl.DataFrame([{"id": 1, "name": "New Name", "email": "new.email@example.com"}]),
     )
 
+    assert metadata_store.get_table_version(table) == 4
     assert metadata_store.get_op(table, 4) == SetOpReplace([(2, 3)])
 
     with build_table(table, metadata_store, s3) as ctx:
@@ -254,14 +299,25 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         assert first["email"] == "new.email@example.com"
 
     # print("\n\nDone ops. Dumping a `select *` for each version:")
-    versions = metadata_store.get_table_version(table)
-    for v in list(range(1, versions)) + [None]:
-        with build_table(table, metadata_store, s3, version=v) as ctx:
-            df = ctx.sql("SELECT * FROM users ORDER BY id asc")
-            df = df.to_polars()
+    # versions = metadata_store.get_table_version(table)
+    # for v in list(range(1, versions)) + [None]:
+    #     with build_table(table, metadata_store, s3, version=v) as ctx:
+    #         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
+    #         df = df.to_polars()
 
-            # print(f"\n`users` table at version {v or 'latest'}:")
-            # print(df)
+    # Then test a delete and replace op
+    replacements = pl.DataFrame(
+        [
+            {"id": 6, "name": "6", "email": "6@gmail.com"},
+            {"id": 7, "name": "7", "email": "7@gmail.com"},
+        ]
+    )
+    delete_and_add(table, s3, metadata_store, [1], replacements)
+    ids = set(metadata_store.all(table, s3)["id"].to_list())
+    assert ids == {1, 2, 6, 7}
+
+    assert metadata_store.get_table_version(table) == 5
+    assert metadata_store.get_op(table, 5) == SetOpDeleteAndAdd(([1], [4]))
 
 
 def test_simple_insert_fake():

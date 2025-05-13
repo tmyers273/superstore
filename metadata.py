@@ -5,7 +5,7 @@ from .classes import Database, MicroPartition, Schema, Table
 from .s3 import S3Like
 import polars as pl
 
-from .set_ops import SetOp, SetOpAdd, SetOpReplace, apply
+from .set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):
@@ -80,12 +80,29 @@ class MetadataStore(Protocol):
     ):
         raise NotImplementedError
 
+    def delete_and_add_micro_partitions(
+        self,
+        table: Table,
+        current_version: int,
+        delete_ids: list[int],
+        new_mps: list[MicroPartition],
+    ):
+        raise NotImplementedError
+
     def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
         replacements: dict[int, MicroPartition],
     ):
+        """
+        Replace the micro partitions in the table with the given replacements.
+
+        This is intended for more point-wise updates and deletes.
+
+        Replacements is a dict keyed by the old MP id, then the new MP.
+        """
+
         raise NotImplementedError
 
     def get_new_micropartition_id(self, table: Table) -> int:
@@ -239,12 +256,9 @@ class FakeMetadataStore(MetadataStore):
             micro_partition_raw = s3.get_object("bucket", f"{metadata['id']}")
             if micro_partition_raw is None:
                 raise ValueError(f"Micro partition `{metadata['id']}` not found")
-            micro_partition = json.loads(micro_partition_raw)
 
             yield MicroPartition(
-                id=metadata["id"],
-                header=metadata["header"],
-                data=micro_partition["data"],
+                id=metadata["id"], header=metadata["header"], data=micro_partition_raw
             )
 
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
@@ -300,3 +314,39 @@ class FakeMetadataStore(MetadataStore):
             for old_id, micro_partition in replacements.items()
         ]
         self.ops[table.name].append(SetOpReplace(r))
+
+    def delete_and_add_micro_partitions(
+        self,
+        table: Table,
+        current_version: int,
+        delete_ids: list[int],
+        new_mps: list[MicroPartition],
+    ):
+        if self.get_table_version(table) != current_version:
+            raise ValueError("Version mismatch")
+
+        if table.name not in self.current_micro_partitions:
+            raise ValueError(f"Table {table.name} has no micro partitions")
+
+        # Make sure all the ids exist
+        current_ids = {p for p in self.current_micro_partitions[table.name]}
+        for old_id in delete_ids:
+            if old_id not in current_ids:
+                raise ValueError(f"Micro partition {old_id} not found: {current_ids}")
+
+        # Replace the micro partitions in metadata
+        index = {v: i for i, v in enumerate(self.current_micro_partitions[table.name])}
+        for old_id in delete_ids:
+            del self.current_micro_partitions[table.name][index[old_id]]
+
+        for new_mp in new_mps:
+            self.current_micro_partitions[table.name].append(new_mp.id)
+            self.raw_micro_partitions[new_mp.id] = {
+                "id": new_mp.id,
+                "header": new_mp.header,
+            }
+
+        self.table_versions[table.name] = current_version + 1
+
+        new_mp_ids = [p.id for p in new_mps]
+        self.ops[table.name].append(SetOpDeleteAndAdd((delete_ids, new_mp_ids)))
