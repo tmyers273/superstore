@@ -1,4 +1,4 @@
-from set_ops import SetOpAdd, SetOpDelete, SetOpReplace, apply
+from ..set_ops import SetOpAdd, SetOpDelete, SetOpReplace, apply
 
 
 def test_set_ops():

@@ -1,5 +1,5 @@
 import os
-from s3 import S3Like
+from .s3 import S3Like
 
 
 class LocalS3(S3Like):

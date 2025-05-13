@@ -4,12 +4,12 @@ from time import perf_counter
 import polars as pl
 import pytest
 
-from classes import ColumnDefinitions, Table
-from local_s3 import LocalS3
-from metadata import FakeMetadataStore
-from run_test import build_table, insert
-from s3 import FakeS3
-from sqlite_metadata import SqliteMetadata
+from ..classes import ColumnDefinitions, Table
+from ..local_s3 import LocalS3
+from ..metadata import FakeMetadataStore
+from .run_test import build_table, insert
+from ..s3 import FakeS3
+from ..sqlite_metadata import SqliteMetadata
 
 
 def get_parquet_files(path: str) -> list[str]:

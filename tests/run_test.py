@@ -9,13 +9,13 @@ from time import perf_counter
 from datafusion import SessionContext
 import polars as pl
 
-from classes import ColumnDefinitions, Header, MicroPartition, Table
-from local_s3 import LocalS3
-from metadata import FakeMetadataStore, MetadataStore
-from s3 import FakeS3, S3Like
-from set_ops import SetOpAdd, SetOpReplace
-from compress import compress
-from sqlite_metadata import SqliteMetadata
+from ..classes import ColumnDefinitions, Header, MicroPartition, Table
+from ..local_s3 import LocalS3
+from ..metadata import FakeMetadataStore, MetadataStore
+from ..s3 import FakeS3, S3Like
+from ..set_ops import SetOpAdd, SetOpReplace
+from ..compress import compress
+from ..sqlite_metadata import SqliteMetadata
 
 
 class Metadata:

@@ -2,12 +2,12 @@ from typing import Generator
 from sqlalchemy import create_engine, Column, Integer, String, JSON, ForeignKey, select
 from sqlalchemy.orm import declarative_base, Session, relationship
 from sqlalchemy.ext.declarative import declared_attr
-from metadata import MetadataStore
-from classes import MicroPartition, Statistics, Table
-from s3 import S3Like
+from .metadata import MetadataStore
+from .classes import MicroPartition, Statistics, Table
+from .s3 import S3Like
 import json
 import polars as pl
-from set_ops import SetOp, SetOpAdd, SetOpDelete, SetOpReplace, apply
+from .set_ops import SetOp, SetOpAdd, SetOpDelete, SetOpReplace, apply
 
 Base = declarative_base()
 
