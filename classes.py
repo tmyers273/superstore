@@ -100,7 +100,20 @@ class ColumnDefinitions(BaseModel):
     type: str
 
 
+class Database(BaseModel):
+    id: int
+    name: str
+
+
+class Schema(BaseModel):
+    id: int
+    database_id: int
+    name: str
+
+
 class Table(BaseModel):
     id: int
+    schema_id: int
+    database_id: int
     name: str
     columns: list[ColumnDefinitions]
