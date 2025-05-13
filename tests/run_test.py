@@ -1,4 +1,3 @@
-import base64
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 import io
@@ -8,15 +7,15 @@ import tempfile
 from time import perf_counter
 from datafusion import SessionContext
 import polars as pl
+import pyarrow.dataset as ds
 
-from ..classes import ColumnDefinitions, Header, MicroPartition, Table
 from ..local_s3 import LocalS3
+from ..classes import ColumnDefinitions, Header, MicroPartition, Table
 from ..metadata import FakeMetadataStore, MetadataStore
 from ..s3 import FakeS3, S3Like
 from ..set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
 from ..compress import compress
 from ..sqlite_metadata import SqliteMetadata
-import pyarrow.dataset as ds
 
 
 class Metadata:
@@ -190,25 +189,51 @@ def build_table(
     table_name: str = "users",
 ):
     ctx = SessionContext()
+
+    match s3:
+        case FakeS3():
+            with tempfile.TemporaryDirectory() as tmpdir:
+                for p in metadata_store.micropartitions(table, s3, version=version):
+                    path = os.path.join(tmpdir, f"{p.id}.parquet")
+                    p.dump().write_parquet(path)
+
+                dataset = ds.dataset(tmpdir, format="parquet")
+                ctx.register_dataset(table_name, dataset)
+                yield ctx
+        case LocalS3():
+            wanted_ids = []
+            for p in metadata_store.micropartitions(table, s3, version=version):
+                # path = os.path.join(tmpdir, f"{p.id}.parquet")
+                # p.dump().write_parquet(path)
+                wanted_ids.append(p.id)
+
+            base_dir = "ams_scratch/mps/bucket"
+            paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+            dataset = ds.dataset(paths, format="parquet")
+            ctx.register_dataset(table_name, dataset)
+            yield ctx
+        case _:
+            raise ValueError(f"Unsupported S3 type: {type(s3)}")
+
     # allowed = {169, 170, 171}
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for p in metadata_store.micropartitions(table, s3, version=version):
-            path = os.path.join(tmpdir, f"{p.id}.parquet")
-            p.dump().write_parquet(path)
+    # with tempfile.TemporaryDirectory() as tmpdir:
+    # for p in metadata_store.micropartitions(table, s3, version=version):
+    #     path = os.path.join(tmpdir, f"{p.id}.parquet")
+    #     p.dump().write_parquet(path)
 
-        # wanted_ids = []
-        # for p in metadata_store.micropartitions(table, s3, version=version):
-        #     path = os.path.join(tmpdir, f"{p.id}.parquet")
-        #     p.dump().write_parquet(path)
-        #     wanted_ids.append(p.id)
+    # wanted_ids = []
+    # for p in metadata_store.micropartitions(table, s3, version=version):
+    #     # path = os.path.join(tmpdir, f"{p.id}.parquet")
+    #     # p.dump().write_parquet(path)
+    #     wanted_ids.append(p.id)
 
-        # base_dir = "ams_scratch/mps/bucket"
-        # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
-        # dataset = ds.dataset(paths, format="parquet")
-        # ctx.register_dataset(table_name, dataset)
+    # base_dir = "ams_scratch/mps/bucket"
+    # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+    # dataset = ds.dataset(paths, format="parquet")
+    # ctx.register_dataset(table_name, dataset)
 
-        ctx.register_parquet(table_name, tmpdir)
-        yield ctx
+    # # ctx.register_parquet(table_name, tmpdir)
+    # yield ctx
 
 
 def simple_insert(metadata_store: MetadataStore, s3: S3Like):
