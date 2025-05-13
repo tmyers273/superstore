@@ -19,6 +19,7 @@ class ColumnStatistics[T](BaseModel):
     min: T
     max: T
     null_count: int
+    unique_count: int
 
 
 class Statistics(BaseModel):
@@ -42,6 +43,13 @@ class MicroPartition(BaseModel):
     def statistics(self) -> Statistics:
         buffer = io.BytesIO(self.data)
 
+        # Open the parquet file
+        buffer.seek(0)
+        df = pl.read_parquet(buffer)
+        cardinality_by_col = df.select(
+            [pl.col(col).n_unique() for col in df.columns]
+        ).to_dicts()[0]
+
         # Read the parquet file metadata
         parquet_file = pq.ParquetFile(buffer)
         metadata = parquet_file.metadata
@@ -55,7 +63,12 @@ class MicroPartition(BaseModel):
                 name = col_metadata.path_in_schema
                 if name not in cols:
                     cols[name] = ColumnStatistics(
-                        name=name, index=j, min=None, max=None, null_count=0
+                        name=name,
+                        index=j,
+                        min=None,
+                        max=None,
+                        null_count=0,
+                        unique_count=cardinality_by_col[name],
                     )
 
                 stats = col_metadata.statistics
