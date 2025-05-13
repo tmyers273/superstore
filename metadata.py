@@ -1,11 +1,11 @@
 from copy import deepcopy
 import json
 from typing import Generator, Protocol
-from classes import MicroPartition, Table
-from s3 import S3Like
+from .classes import MicroPartition, Table
+from .s3 import S3Like
 import polars as pl
 
-from set_ops import SetOp, SetOpAdd, SetOpReplace, apply
+from .set_ops import SetOp, SetOpAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):

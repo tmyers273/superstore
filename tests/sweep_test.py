@@ -1,5 +1,5 @@
 from datetime import date
-from sweep import find_ids_with_most_overlap
+from ..sweep import find_ids_with_most_overlap
 
 
 def test_sweep_with_integers():
@@ -11,7 +11,6 @@ def test_sweep_with_integers():
     ]
 
     result = find_ids_with_most_overlap(items)
-    print(result)
 
     # C should have the most overlaps (with A, B, and D)
     assert len(result) == 3
