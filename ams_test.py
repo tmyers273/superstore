@@ -24,6 +24,8 @@ def get_parquet_files(path: str) -> list[str]:
 def get_table() -> Table:
     return Table(
         id=1,
+        schema_id=1,
+        database_id=1,
         name="sp-traffic",
         columns=[
             ColumnDefinitions(name="idempotency_id", type="String"),

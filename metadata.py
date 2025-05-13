@@ -83,10 +83,13 @@ class FakeMetadataStore(MetadataStore):
         return self.ops[table.name]
 
     def get_op(self, table: Table, version: int) -> SetOp | None:
-        if version in self.ops[table.name]:
-            return self.ops[table.name][version]
-        else:
+        if table.name not in self.ops:
             return None
+
+        if version >= len(self.ops[table.name]):
+            return None
+
+        return self.ops[table.name][version]
 
     def get_table_version(self, table: Table) -> int:
         if table.name not in self.table_versions:
@@ -112,7 +115,7 @@ class FakeMetadataStore(MetadataStore):
         self.table_versions[table.name] = current_version + 1
 
         if self.ops.get(table.name) is None:
-            self.ops[table.name] = []
+            self.ops[table.name] = [SetOpAdd([])]
         ids = [p.id for p in micro_partitions]
         self.ops[table.name].append(SetOpAdd(ids))
         self.current_micro_partitions[table.name].extend(ids)
@@ -198,7 +201,7 @@ class FakeMetadataStore(MetadataStore):
 
         # Construct a list of the replacements
         if self.ops.get(table.name) is None:
-            self.ops[table.name] = []
+            self.ops[table.name] = [SetOpAdd([])]
 
         r = [
             (old_id, micro_partition.id)
