@@ -42,36 +42,37 @@ class MicroPartition(BaseModel):
 
     def statistics(self) -> Statistics:
         buffer = io.BytesIO(self.data)
-
-        # Open the parquet file
         buffer.seek(0)
         df = pl.read_parquet(buffer)
-        cardinality_by_col = df.select(
-            [pl.col(col).n_unique() for col in df.columns]
-        ).to_dicts()[0]
 
-        card = [
-            pl.col(col).n_unique().alias(f"{col}_cardinality") for col in df.columns
-        ]
-        min = [pl.col(col).min().alias(f"{col}_min") for col in df.columns]
-        max = [pl.col(col).max().alias(f"{col}_max") for col in df.columns]
-        null_count = [
-            pl.col(col).null_count().alias(f"{col}_null_count") for col in df.columns
-        ]
+        # Define the statistics we want to compute for each column
+        stats_operations = {
+            "cardinality": lambda col: pl.col(col).n_unique(),
+            "min": lambda col: pl.col(col).min(),
+            "max": lambda col: pl.col(col).max(),
+            "null_count": lambda col: pl.col(col).null_count(),
+        }
 
-        t = df.select(card + min + max + null_count).to_dicts()[0]
+        # Generate all statistics expressions
+        stats_exprs = []
+        for col in df.columns:
+            for stat_name, operation in stats_operations.items():
+                stats_exprs.append(operation(col).alias(f"{col}_{stat_name}"))
 
-        # Turn the DF into a list of ColumnStatistics
+        # Compute all statistics in a single pass
+        stats = df.select(stats_exprs).to_dicts()[0]
+
+        # Create ColumnStatistics objects
         cols = []
         for i, col in enumerate(df.columns):
             cols.append(
                 ColumnStatistics(
                     name=col,
                     index=i,
-                    min=t[f"{col}_min"],
-                    max=t[f"{col}_max"],
-                    null_count=t[f"{col}_null_count"],
-                    unique_count=t[f"{col}_cardinality"],
+                    min=stats[f"{col}_min"],
+                    max=stats[f"{col}_max"],
+                    null_count=stats[f"{col}_null_count"],
+                    unique_count=stats[f"{col}_cardinality"],
                 )
             )
 
