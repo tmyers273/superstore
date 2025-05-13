@@ -108,14 +108,10 @@ def delete_and_add(
 
     mps = []
 
-    print("Compressing new df", new_df, type(new_df))
     dfs = compress(new_df)
-    print("dfs:", len(dfs))
     current_id = metadata_store.get_new_micropartition_id(table)
     for i, buffer in enumerate(dfs):
         id = current_id + i
-        print("buffer:", buffer.tell())
-        # buffer.seek(0)
 
         # Create a new micro partition
         micro_partition = MicroPartition(
@@ -123,7 +119,6 @@ def delete_and_add(
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
         )
-        print("new mpi id:", id + i)
         mps.append(micro_partition)
 
         # Try saving to S3
