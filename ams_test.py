@@ -1,12 +1,15 @@
+import json
 import os
 from time import perf_counter
 import polars as pl
 import pytest
 
 from classes import ColumnDefinitions, Table
+from local_s3 import LocalS3
 from metadata import FakeMetadataStore
 from run_test import build_table, insert
 from s3 import FakeS3
+from sqlite_metadata import SqliteMetadata
 
 
 def get_parquet_files(path: str) -> list[str]:
@@ -18,17 +21,8 @@ def get_parquet_files(path: str) -> list[str]:
     return out
 
 
-@pytest.mark.skip(reason="Skipping ams test")
-def test_ams():
-    files = get_parquet_files("./ams")
-    print("Found", len(files), "parquet files")
-
-    # Load the first one and print the schema
-    df = pl.read_parquet(files[0])
-    for k, v in df.schema.items():
-        print(k, v)
-
-    table = Table(
+def get_table() -> Table:
+    return Table(
         id=1,
         name="sp-traffic",
         columns=[
@@ -51,8 +45,39 @@ def test_ams():
         ],
     )
 
-    metadata_store = FakeMetadataStore()
-    s3 = FakeS3()
+
+def test_queries():
+    metadata_store = SqliteMetadata("sqlite:///ams_scratch/ams.db")
+    s3 = LocalS3("ams_scratch/mps")
+    table = get_table()
+
+    stats = metadata_store.get_stats(table, s3, None)
+    for s in stats:
+        print(s.id, s.rows, s.filesize, s.filesize / s.rows)
+    out = [m.model_dump() for m in stats]
+    # d = json.dumps(out)
+    # print(d)
+
+    # with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+    #     df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
+    #     df = df.to_polars()
+
+
+@pytest.mark.skip(reason="Skipping ams test")
+def test_ams():
+    files = get_parquet_files("./ams")
+    print("Found", len(files), "parquet files")
+
+    # Load the first one and print the schema
+    df = pl.read_parquet(files[0])
+    for k, v in df.schema.items():
+        print(k, v)
+
+    table = get_table()
+
+    metadata_store = SqliteMetadata("sqlite:///ams_scratch/ams.db")
+    s3 = LocalS3("ams_scratch/mps")
+    # s3 = FakeS3()
 
     for i, file in enumerate(files):
         print(f"Processing {file} ({i + 1}/{len(files)})")

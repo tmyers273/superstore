@@ -22,6 +22,7 @@ class ColumnStatistics[T](BaseModel):
 
 
 class Statistics(BaseModel):
+    id: int
     rows: int
     filesize: int
     columns: list[ColumnStatistics]
@@ -55,7 +56,7 @@ class MicroPartition(BaseModel):
                 name = col_metadata.path_in_schema
                 if name not in cols:
                     cols[name] = ColumnStatistics(
-                        name=name, index=i, min=None, max=None, null_count=0
+                        name=name, index=j, min=None, max=None, null_count=0
                     )
 
                 stats = col_metadata.statistics
@@ -74,7 +75,12 @@ class MicroPartition(BaseModel):
         cols = list(cols.values())
         cols.sort(key=lambda x: x.index)
 
+        print(
+            f"Size for {self.id}: {metadata.serialized_size} vs buffer len of {len(data)} w/ {metadata.num_row_groups} row groups"
+        )
+
         return Statistics(
+            id=self.id,
             rows=metadata.num_rows,
             filesize=metadata.serialized_size,
             columns=cols,

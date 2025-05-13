@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, Column, Integer, String, JSON, ForeignKey,
 from sqlalchemy.orm import declarative_base, Session, relationship
 from sqlalchemy.ext.declarative import declared_attr
 from metadata import MetadataStore
-from classes import MicroPartition, Table
+from classes import MicroPartition, Statistics, Table
 from s3 import S3Like
 import json
 import polars as pl
@@ -58,6 +58,14 @@ class SqliteMetadata(MetadataStore):
         self.engine = create_engine(connection_string)
         Base.metadata.create_all(self.engine)
 
+    def get_stats(
+        self, table: Table, s3: S3Like, version: int | None = None
+    ) -> list[Statistics]:
+        stats = []
+        for mp in self.micropartitions(table, s3, version):
+            stats.append(mp.statistics())
+        return stats
+
     def get_ops(self, table: Table) -> list[SetOp]:
         with Session(self.engine) as session:
             stmt = (
@@ -108,7 +116,7 @@ class SqliteMetadata(MetadataStore):
             # Add operation
             operation = Operation(
                 table_name=table.name,
-                version=version + 1,
+                version=current_version + 1,
                 operation_type="add",
                 data=[mp.id for mp in micro_partitions],
             )
@@ -116,7 +124,7 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            self.bump_table_version(session, table, version)
+            self.bump_table_version(session, table, current_version)
 
             session.commit()
 
@@ -189,14 +197,17 @@ class SqliteMetadata(MetadataStore):
             result = session.execute(stmt).scalar()
             return 0 if result is None else result + 1
 
-    def micropartitions(
-        self, table: Table, s3: S3Like, version: int | None = None
-    ) -> Generator[MicroPartition, None, None]:
+    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         ops = self.get_ops(table)
         if version is not None:
             ops = ops[:version]
 
-        ids = apply(set(), ops)
+        return apply(set(), ops)
+
+    def micropartitions(
+        self, table: Table, s3: S3Like, version: int | None = None
+    ) -> Generator[MicroPartition, None, None]:
+        ids = self._get_ids(table, version)
 
         with Session(self.engine) as session:
             # Get current micro partitions
