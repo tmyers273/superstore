@@ -11,4 +11,5 @@ dependencies = [
     "pytest-watch>=4.2.0",
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.9",
+    "fastapi[standard]>=0.115.12",
 ]

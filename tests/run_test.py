@@ -160,9 +160,7 @@ def build_table(
     ctx = SessionContext()
     with tempfile.TemporaryDirectory() as tmpdir:
         for p in metadata_store.micropartitions(table, s3, version=version):
-            print(f"Loading {p.id}")
             path = os.path.join(tmpdir, f"{p.id}.parquet")
-            print(p.dump())
             p.dump().write_parquet(path)
 
         ctx.register_parquet(table_name, tmpdir)
