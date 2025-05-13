@@ -50,46 +50,34 @@ class MicroPartition(BaseModel):
             [pl.col(col).n_unique() for col in df.columns]
         ).to_dicts()[0]
 
-        # Read the parquet file metadata
-        parquet_file = pq.ParquetFile(buffer)
-        metadata = parquet_file.metadata
+        card = [
+            pl.col(col).n_unique().alias(f"{col}_cardinality") for col in df.columns
+        ]
+        min = [pl.col(col).min().alias(f"{col}_min") for col in df.columns]
+        max = [pl.col(col).max().alias(f"{col}_max") for col in df.columns]
+        null_count = [
+            pl.col(col).null_count().alias(f"{col}_null_count") for col in df.columns
+        ]
 
-        # Print column statistics for each row group
-        cols = {}
-        for i in range(metadata.num_row_groups):
-            row_group_metadata = metadata.row_group(i)
-            for j in range(row_group_metadata.num_columns):
-                col_metadata = row_group_metadata.column(j)
-                name = col_metadata.path_in_schema
-                if name not in cols:
-                    cols[name] = ColumnStatistics(
-                        name=name,
-                        index=j,
-                        min=None,
-                        max=None,
-                        null_count=0,
-                        unique_count=cardinality_by_col[name],
-                    )
+        t = df.select(card + min + max + null_count).to_dicts()[0]
 
-                stats = col_metadata.statistics
-                if stats:
-                    if cols[name].min is not None:
-                        cols[name].min = min(stats.min, cols[name].min)
-                    else:
-                        cols[name].min = stats.min
-
-                    if cols[name].max is None:
-                        cols[name].max = stats.max
-                    else:
-                        cols[name].max = max(stats.max, cols[name].max)
-                    cols[name].null_count += stats.null_count
-
-        cols = list(cols.values())
-        cols.sort(key=lambda x: x.index)
+        # Turn the DF into a list of ColumnStatistics
+        cols = []
+        for i, col in enumerate(df.columns):
+            cols.append(
+                ColumnStatistics(
+                    name=col,
+                    index=i,
+                    min=t[f"{col}_min"],
+                    max=t[f"{col}_max"],
+                    null_count=t[f"{col}_null_count"],
+                    unique_count=t[f"{col}_cardinality"],
+                )
+            )
 
         return Statistics(
             id=self.id,
-            rows=metadata.num_rows,
+            rows=df.height,
             filesize=len(self.data),
             columns=cols,
         )
