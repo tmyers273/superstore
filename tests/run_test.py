@@ -213,10 +213,13 @@ def build_table(
                 yield ctx
         case LocalS3():
             wanted_ids = []
+            s = perf_counter()
             for p in metadata_store.micropartitions(
                 table, s3, version=version, with_data=with_data
             ):
                 wanted_ids.append(p.id)
+            e = perf_counter()
+            print(f"Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
 
             base_dir = "ams_scratch/mps/bucket"
             paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]

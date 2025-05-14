@@ -208,7 +208,7 @@ class SqliteMetadata(MetadataStore):
         self, table: Table, s3: S3Like, version: int | None = None
     ) -> list[Statistics]:
         stats = []
-        for mp in self.micropartitions(table, s3, version):
+        for mp in self.micropartitions(table, s3, version, with_data=False):
             stats.append(mp.stats)
         return stats
 
