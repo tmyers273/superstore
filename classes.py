@@ -1,3 +1,4 @@
+import datetime
 import io
 
 import polars as pl
@@ -67,12 +68,25 @@ class Statistics(BaseModel):
         # Create ColumnStatistics objects
         cols = []
         for i, col in enumerate(df.columns):
+            min = stats[f"{col}_min"]
+            max = stats[f"{col}_max"]
+            match min:
+                case datetime.date():
+                    min = str(min)
+                case _:
+                    pass
+            match max:
+                case datetime.date():
+                    max = str(max)
+                case _:
+                    pass
+
             cols.append(
                 ColumnStatistics(
                     name=col,
                     index=i,
-                    min=stats[f"{col}_min"],
-                    max=stats[f"{col}_max"],
+                    min=min,
+                    max=max,
                     null_count=stats[f"{col}_null_count"],
                     unique_count=stats[f"{col}_cardinality"],
                 )

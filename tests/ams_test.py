@@ -46,6 +46,7 @@ def get_table() -> Table:
             ColumnDefinitions(name="clicks", type="Int64"),
             ColumnDefinitions(name="impressions", type="Int64"),
             ColumnDefinitions(name="cost", type="Float64"),
+            ColumnDefinitions(name="date", type="Date"),
         ],
     )
 
@@ -152,7 +153,7 @@ def test_query_time():
         with timer("Time to get sum of clicks, impressions, cost by date") as t:
             df = ctx.sql(
                 """
-                SELECT campaign_id, ad_group_id, ad_id, sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
+                SELECT campaign_id, ad_group_id, ad_id, sum(clicks), sum(impressions), sum(cost), date
                 FROM 'sp-traffic' 
                 WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
                 GROUP BY date, campaign_id, ad_group_id, ad_id, keyword_id
@@ -271,7 +272,7 @@ def test_clustering2() -> None:
     delete_and_add(table, s3, metadata, delete_ids, df)
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_clustering() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
@@ -324,7 +325,7 @@ def test_clustering() -> None:
     # If we want to cap the total ram usage to 512mb,
     # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
     # or 512mb / 2 = 256mb
-    max_filesize = 8 * 128 * 1024 * 1024  # 128mb
+    max_filesize = 128 * 1024 * 1024  # 128mb
     total_size = 0
     for i, overlap in enumerate(overlaps):
         total_size += overlap.filesize
@@ -388,10 +389,14 @@ def test_ams():
     for i, file in enumerate(files):
         print(f"Processing {file} ({i + 1}/{len(files)})")
         df = pl.read_parquet(file)
+
+        df = df.with_columns(
+            pl.col("time_window_start").str.to_datetime().alias("date").cast(pl.Date)
+        )
+
         # if i > 115:
         #     break
 
-        df = pl.read_parquet(file)
         insert(table, s3, metadata_store, df)
         print(f"    Inserted {df.height} rows")
 
