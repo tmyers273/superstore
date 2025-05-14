@@ -1,12 +1,11 @@
 import io
-import json
 import os
 from time import perf_counter
 
 import polars as pl
 import pytest
 
-from ..classes import ColumnDefinitions, Database, Schema, Table
+from ..classes import ColumnDefinitions, Database, Schema, Statistics, Table
 from ..local_s3 import LocalS3
 from ..metadata import MetadataStore
 from ..sqlite_metadata import SqliteMetadata
@@ -116,49 +115,64 @@ def test_query_time():
     # 12ms
 
     print(f"Starting to build table: {(perf_counter() - start) * 1000:.0f}ms")
+    times = {}
     with build_table(
         table, metadata, s3, table_name="sp-traffic", with_data=False
     ) as ctx:
         print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
-        with timer("Time to get count"):
+        with timer("Time to get count") as t:
             df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
             df = df.to_polars()
+        times["total_count"] = t.duration_ms
         print(df)
 
-        with timer("Time to get counts by advertiser_id"):
+        with timer("Time to get counts by advertiser_id") as t:
             df = ctx.sql(
                 "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
             )
             df = df.to_polars()
-
+        times["count_by_advertiser"] = t.duration_ms
         print(df)
 
-        with timer("Time to get sum of clicks, impressions, cost by date"):
+        with timer("Time to get sum of clicks, impressions, cost by date") as t:
             df = ctx.sql(
                 """
-                SELECT sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
+                SELECT campaign_id, ad_group_id, ad_id, sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
                 FROM 'sp-traffic' 
                 WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
-                GROUP BY date
+                GROUP BY date, campaign_id, ad_group_id, ad_id, keyword_id
             """
             )
             df = df.to_polars()
 
+        times["certain_advertiser_specific_dates"] = t.duration_ms
+
+        version = metadata.get_table_version(table)
+        print(f"Version: {version}")
         print(df)
+        print(times)
+
+        with open("times.csv", "a") as f:
+            for query, time in times.items():
+                f.write(f"{version},{query},{time}\n")
 
 
-@pytest.mark.skip(reason="Skipping ams test")
-def test_clustering():
+# @pytest.mark.skip(reason="Skipping ams test")
+def test_clustering() -> None:
+    print("init")
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
-    table = create_table_if_needed(metadata)
+    print("creating table")
+    create_table_if_needed(metadata)
+    print("creating s3")
     s3 = LocalS3("ams_scratch/mps")
-
+    print("getting table")
     table = metadata.get_table("sp-traffic")
     if table is None:
-        return {"error": "Table not found"}
+        raise Exception("Table not found")
 
-    stats = {}
-    for mp in metadata.micropartitions(table, s3):
+    stats: dict[int, Statistics] = {}
+    print("Loading stats")
+    for mp in metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
 
     index = 0
@@ -168,20 +182,43 @@ def test_clustering():
                 index = col.index
                 break
 
+    print("Preparing sweep")
     to_sweep: list[tuple[str, str, int]] = []
     for stat in stats.values():
         col = stat.columns[index]
         to_sweep.append((col.min, col.max, stat.id))
 
-    overlap = find_ids_with_most_overlap(to_sweep)
-    overlaps = [stats[id] for id in overlap]
+    print(f"Finding overlap of {len(to_sweep)} MPs")
+    overlap_set: set[int] = find_ids_with_most_overlap(to_sweep)
+    overlaps: list[Statistics] = [stats[id] for id in overlap_set]
     overlaps = sorted(overlaps, key=lambda x: x.id)
 
-    # Only allow up to 64mb of overlapping MPs
+    if len(overlaps) <= 1:
+        print("No overlaps found, trying to combine small MPs")
+
+        # Try to combine small MPs
+        SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
+        for stat in stats.values():
+            if stat.filesize < SMALL_CUTOFF:
+                overlaps.append(stat)
+        overlaps = sorted(overlaps, key=lambda x: x.id)
+
+    if len(overlaps) <= 0:
+        print("No overlaps found, exiting")
+        return
+
+    # Cap the total filesize of the parquet files
+    # We expect the ram usage of the df to be some
+    # multiple (2-5x?) of the parquet filesize.
+    #
+    # If we want to cap the total ram usage to 512mb,
+    # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
+    # or 512mb / 2 = 256mb
+    max_filesize = 128 * 1024 * 1024
     total_size = 0
     for i, overlap in enumerate(overlaps):
         total_size += overlap.filesize
-        if total_size > 16 * 64 * 1024 * 1024:
+        if total_size > max_filesize:
             break
 
     print(f"Found a total of{len(overlaps)} overlapping MPs")
@@ -197,7 +234,6 @@ def test_clustering():
         if mp is None:
             raise Exception(f"Micropartition {overlap.id} not found")
 
-        mp = json.loads(mp)["data"]
         buffer = io.BytesIO(mp)
 
         # Reset buffer position and read the dataframe
@@ -217,8 +253,6 @@ def test_clustering():
     df = df.sort(["advertiser_id", "time_window_start"])
     delete_ids = [overlap.id for overlap in overlaps]
     delete_and_add(table, s3, metadata, delete_ids, df)
-
-    print(metadata.get_ops(table)[-5:])
 
 
 @pytest.mark.skip(reason="Skipping ams test")
