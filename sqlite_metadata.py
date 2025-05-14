@@ -209,7 +209,7 @@ class SqliteMetadata(MetadataStore):
     ) -> list[Statistics]:
         stats = []
         for mp in self.micropartitions(table, s3, version):
-            stats.append(mp.statistics())
+            stats.append(mp.stats)
         return stats
 
     def get_ops(self, table: Table) -> list[SetOp]:
@@ -351,7 +351,11 @@ class SqliteMetadata(MetadataStore):
         return apply(set(), ops)
 
     def micropartitions(
-        self, table: Table, s3: S3Like, version: int | None = None
+        self,
+        table: Table,
+        s3: S3Like,
+        version: int | None = None,
+        with_data: bool = True,
     ) -> Generator[MicroPartition, None, None]:
         ids = self._get_ids(table, version)
 
@@ -365,9 +369,11 @@ class SqliteMetadata(MetadataStore):
 
             # Yield micro partitions
             for mp in micro_partitions:
-                micro_partition_raw = s3.get_object("bucket", str(mp.id))
-                if micro_partition_raw is None:
-                    raise ValueError(f"Micro partition `{mp.id}` not found")
+                micro_partition_raw = None
+                if with_data:
+                    micro_partition_raw = s3.get_object("bucket", str(mp.id))
+                    if micro_partition_raw is None:
+                        raise ValueError(f"Micro partition `{mp.id}` not found")
 
                 yield MicroPartition(
                     id=mp.id,

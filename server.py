@@ -35,19 +35,24 @@ async def table(table_id: int):
     mps = []
     total_rows = 0
     total_filesize = 0
+    micropartitions = 0
     for mp in metadata.micropartitions(table, s3):
         raw = mp.model_dump()
         del raw["data"]
-        stats = mp.statistics()
+        stats = mp.stats
         total_rows += stats.rows
         total_filesize += stats.filesize
         raw["stats"] = stats.model_dump()
-        mps.append(raw)
+        micropartitions += 1
+
+        if len(mps) < 30:
+            mps.append(raw)
 
     out = table.model_dump()
     out["mps"] = mps
     out["total_rows"] = total_rows
     out["total_filesize"] = total_filesize
+    out["micropartitions"] = micropartitions
     return out
 
 

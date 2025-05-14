@@ -111,7 +111,11 @@ class MetadataStore(Protocol):
         raise NotImplementedError
 
     def micropartitions(
-        self, table: Table, s3: S3Like, version: int | None = None
+        self,
+        table: Table,
+        s3: S3Like,
+        version: int | None = None,
+        with_data: bool = True,
     ) -> Generator[MicroPartition, None, None]:
         """
         A generator that loops through all the micro partitions for a table.
@@ -238,7 +242,11 @@ class FakeMetadataStore(MetadataStore):
         return self.micropartition_ids[table.name]
 
     def micropartitions(
-        self, table: Table, s3: S3Like, version: int | None = None
+        self,
+        table: Table,
+        s3: S3Like,
+        version: int | None = None,
+        with_data: bool = True,
     ) -> Generator[MicroPartition, None, None]:
         if version is None:
             micropartitions = self.current_micro_partitions[table.name]
