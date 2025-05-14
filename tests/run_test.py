@@ -197,6 +197,7 @@ def build_table(
     version: int | None = None,
     table_name: str = "users",
     with_data: bool = True,
+    included_mp_ids: set[int] | None = None,
 ):
     ctx = SessionContext()
 
@@ -206,6 +207,8 @@ def build_table(
                 for p in metadata_store.micropartitions(
                     table, s3, version=version, with_data=with_data
                 ):
+                    if included_mp_ids is not None and p.id not in included_mp_ids:
+                        continue
                     path = os.path.join(tmpdir, f"{p.id}.parquet")
                     p.dump().write_parquet(path)
 
@@ -218,6 +221,8 @@ def build_table(
             for p in metadata_store.micropartitions(
                 table, s3, version=version, with_data=with_data
             ):
+                if included_mp_ids is not None and p.id not in included_mp_ids:
+                    continue
                 wanted_ids.append(p.id)
             e = perf_counter()
             print(f"Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")

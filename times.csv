@@ -197,3 +197,9 @@ version,query,time_ms
 2032,total_count,571
 2032,count_by_advertiser,745
 2032,certain_advertiser_specific_dates,1732
+2032,total_count,470
+2032,count_by_advertiser,671
+2032,certain_advertiser_specific_dates,1558
+2039,total_count,393
+2039,count_by_advertiser,656
+2039,certain_advertiser_specific_dates,1307
