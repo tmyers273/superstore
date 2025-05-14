@@ -266,7 +266,6 @@ class SqliteMetadata(MetadataStore):
                 operation_type="add",
                 data=[mp.id for mp in micro_partitions],
             )
-            print(f"Adding operation: {operation}")
             session.add(operation)
 
             # Update table version

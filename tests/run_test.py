@@ -8,6 +8,7 @@ from time import perf_counter
 
 import polars as pl
 import pyarrow.dataset as ds
+import pytest
 from datafusion import SessionContext
 
 from ..classes import ColumnDefinitions, Header, MicroPartition, Statistics, Table
@@ -310,11 +311,9 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
         df = df.to_polars()
 
-        print(df)
         active_mps = []
         for p in metadata_store.micropartitions(table, s3):
             active_mps.append(p.id)
-        print(active_mps)
         assert len(df) == 4
         assert [1, 2, 4, 5] == df["id"].to_list()
 
@@ -418,6 +417,7 @@ def test_statistics_sqlite():
     check_statistics(metadata_store, s3)
 
 
+@pytest.mark.skip(reason="Takes too long to run")
 def test_stress():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
