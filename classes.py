@@ -95,15 +95,12 @@ class Statistics(BaseModel):
 class MicroPartition(BaseModel):
     id: int
     header: Header
-    data: bytes
+    data: bytes | None
     stats: Statistics
 
-    def statistics(self) -> Statistics:
-        stats = Statistics.from_bytes(self.data)
-        stats.id = self.id
-        return stats
-
     def dump(self) -> pl.DataFrame:
+        if self.data is None:
+            return pl.DataFrame()
         buffer = io.BytesIO(self.data)
 
         # Reset buffer position and read the dataframe

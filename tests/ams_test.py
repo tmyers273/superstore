@@ -87,7 +87,7 @@ def cleanup():
     os.remove("ams_scratch/ams.db")
 
 
-@pytest.mark.skip(reason="Skipping ams test")
+# @pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     start = perf_counter()
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
@@ -116,7 +116,9 @@ def test_query_time():
     # 12ms
 
     print(f"Starting to build table: {(perf_counter() - start) * 1000:.0f}ms")
-    with build_table(table, metadata, s3, table_name="sp-traffic") as ctx:
+    with build_table(
+        table, metadata, s3, table_name="sp-traffic", with_data=False
+    ) as ctx:
         print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
         s = perf_counter()
         df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
@@ -172,7 +174,7 @@ def test_clustering():
 
     stats = {}
     for mp in metadata.micropartitions(table, s3):
-        stats[mp.id] = mp.statistics()
+        stats[mp.id] = mp.stats
 
     index = 0
     for stat in stats.values():
@@ -264,7 +266,7 @@ def test_ams():
 
     stats = {}
     for mp in metadata_store.micropartitions(table, s3):
-        stats[mp.id] = mp.statistics()
+        stats[mp.id] = mp.stats
 
     for id, stat in stats.items():
         print(f"Micropartition {id}:")

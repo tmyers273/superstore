@@ -195,13 +195,16 @@ def build_table(
     s3: S3Like,
     version: int | None = None,
     table_name: str = "users",
+    with_data: bool = True,
 ):
     ctx = SessionContext()
 
     match s3:
         case FakeS3():
             with tempfile.TemporaryDirectory() as tmpdir:
-                for p in metadata_store.micropartitions(table, s3, version=version):
+                for p in metadata_store.micropartitions(
+                    table, s3, version=version, with_data=with_data
+                ):
                     path = os.path.join(tmpdir, f"{p.id}.parquet")
                     p.dump().write_parquet(path)
 
@@ -210,9 +213,9 @@ def build_table(
                 yield ctx
         case LocalS3():
             wanted_ids = []
-            for p in metadata_store.micropartitions(table, s3, version=version):
-                # path = os.path.join(tmpdir, f"{p.id}.parquet")
-                # p.dump().write_parquet(path)
+            for p in metadata_store.micropartitions(
+                table, s3, version=version, with_data=with_data
+            ):
                 wanted_ids.append(p.id)
 
             base_dir = "ams_scratch/mps/bucket"
