@@ -1,8 +1,6 @@
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-
-from .classes import ColumnDefinitions, Database, Schema, Table
 
 from .local_s3 import LocalS3
 from .sqlite_metadata import SqliteMetadata
