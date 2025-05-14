@@ -1,23 +1,21 @@
 from typing import Generator
+
+import polars as pl
 from sqlalchemy import (
-    UniqueConstraint,
-    create_engine,
+    JSON,
     Column,
+    ForeignKey,
     Integer,
     String,
-    JSON,
-    ForeignKey,
+    UniqueConstraint,
+    create_engine,
     select,
 )
-from sqlalchemy.orm import declarative_base, Session, relationship
-from sqlalchemy.ext.declarative import declared_attr
+from sqlalchemy.orm import Session, declarative_base
 
-from .classes import Database, Schema
+from .classes import Database, MicroPartition, Schema, Statistics, Table
 from .metadata import MetadataStore
-from .classes import MicroPartition, Statistics, Table
 from .s3 import S3Like
-import json
-import polars as pl
 from .set_ops import (
     SetOp,
     SetOpAdd,
