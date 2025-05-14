@@ -341,7 +341,7 @@ class SqliteMetadata(MetadataStore):
             )
 
             result = session.execute(stmt).scalar()
-            return 0 if result is None else result + 1
+            return 1 if result is None else result + 1
 
     def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         ops = self.get_ops(table)
