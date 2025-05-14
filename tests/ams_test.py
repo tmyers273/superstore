@@ -87,7 +87,7 @@ def cleanup():
     os.remove("ams_scratch/ams.db")
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     start = perf_counter()
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")

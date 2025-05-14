@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, declarative_base
 
-from .classes import Database, MicroPartition, Schema, Statistics, Table
+from .classes import Database, Header, MicroPartition, Schema, Statistics, Table
 from .metadata import MetadataStore
 from .s3 import S3Like
 from .set_ops import (
@@ -40,7 +40,7 @@ class MicroPartitionMetadata(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
-    header = Column(JSON, nullable=False)
+    stats = Column(JSON, nullable=False)
 
 
 class Operation(Base):
@@ -255,7 +255,7 @@ class SqliteMetadata(MetadataStore):
             # Add micro partition metadata
             for mp in micro_partitions:
                 metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, header=mp.header.model_dump()
+                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
                 )
                 session.add(metadata)
 
@@ -312,7 +312,7 @@ class SqliteMetadata(MetadataStore):
             # Add new micro partition metadata
             for mp in replacements.values():
                 metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, header=mp.header.model_dump()
+                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
                 )
                 session.add(metadata)
 
@@ -370,7 +370,10 @@ class SqliteMetadata(MetadataStore):
                     raise ValueError(f"Micro partition `{mp.id}` not found")
 
                 yield MicroPartition(
-                    id=mp.id, header=mp.header, data=micro_partition_raw
+                    id=mp.id,
+                    data=micro_partition_raw,
+                    stats=Statistics.model_validate(mp.stats),
+                    header=Header(table_id=table.id),
                 )
 
     def delete_and_add_micro_partitions(
@@ -388,7 +391,7 @@ class SqliteMetadata(MetadataStore):
             # Add new micro partition metadata
             for mp in new_mps:
                 metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, header=mp.header.model_dump()
+                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
                 )
                 session.add(metadata)
 

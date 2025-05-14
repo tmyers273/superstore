@@ -27,23 +27,26 @@ class Statistics(BaseModel):
     filesize: int
     columns: list[ColumnStatistics]
 
-    def dump(self):
-        print("Rows: ", self.rows)
-        print("Filesize: ", self.filesize)
-        for col in self.columns:
-            print(f"  {col.name}({col.min} - {col.max}, nulls = {col.null_count})")
+    @classmethod
+    def from_bytes(cls, buffer: io.BytesIO | bytes) -> "Statistics":
+        match buffer:
+            case io.BytesIO():
+                buffer.seek(0)
+                df = pl.read_parquet(buffer)
+                length = buffer.seek(0, io.SEEK_END)
+            case bytes():
+                df = pl.read_parquet(buffer)
+                length = len(buffer)
+            case _:
+                raise ValueError(f"Invalid buffer type: {type(buffer)}")
 
+        stats = cls.from_df(df)
+        stats.filesize = length
 
-class MicroPartition(BaseModel):
-    id: int
-    header: Header
-    data: bytes
+        return stats
 
-    def statistics(self) -> Statistics:
-        buffer = io.BytesIO(self.data)
-        buffer.seek(0)
-        df = pl.read_parquet(buffer)
-
+    @classmethod
+    def from_df(cls, df: pl.DataFrame) -> "Statistics":
         # Define the statistics we want to compute for each column
         stats_operations = {
             "cardinality": lambda col: pl.col(col).n_unique(),
@@ -76,11 +79,29 @@ class MicroPartition(BaseModel):
             )
 
         return Statistics(
-            id=self.id,
+            id=0,
             rows=df.height,
-            filesize=len(self.data),
+            filesize=0,
             columns=cols,
         )
+
+    def dump(self):
+        print("Rows: ", self.rows)
+        print("Filesize: ", self.filesize)
+        for col in self.columns:
+            print(f"  {col.name}({col.min} - {col.max}, nulls = {col.null_count})")
+
+
+class MicroPartition(BaseModel):
+    id: int
+    header: Header
+    data: bytes
+    stats: Statistics
+
+    def statistics(self) -> Statistics:
+        stats = Statistics.from_bytes(self.data)
+        stats.id = self.id
+        return stats
 
     def dump(self) -> pl.DataFrame:
         buffer = io.BytesIO(self.data)
