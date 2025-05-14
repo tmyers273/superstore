@@ -268,7 +268,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
 
     # Expect the table version to be incremented
     assert metadata_store.get_table_version(table) == 1
-    assert metadata_store.get_op(table, 1) == SetOpAdd([0])
+    assert metadata_store.get_op(table, 1) == SetOpAdd([1])
 
     for p in metadata_store.micropartitions(table, s3):
         assert p.dump().to_dicts() == users
@@ -279,7 +279,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     insert(table, s3, metadata_store, df)
 
     assert metadata_store.get_table_version(table) == 2
-    assert metadata_store.get_op(table, 2) == SetOpAdd([1])
+    assert metadata_store.get_op(table, 2) == SetOpAdd([2])
 
     for i, p in enumerate(metadata_store.micropartitions(table, s3)):
         if i == 0:
@@ -298,7 +298,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
 
     delete(table, s3, metadata_store, [3])
     assert metadata_store.get_table_version(table) == 3
-    assert metadata_store.get_op(table, 3) == SetOpReplace([(0, 2)])
+    assert metadata_store.get_op(table, 3) == SetOpReplace([(1, 3)])
 
     with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
@@ -320,7 +320,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     )
 
     assert metadata_store.get_table_version(table) == 4
-    assert metadata_store.get_op(table, 4) == SetOpReplace([(2, 3)])
+    assert metadata_store.get_op(table, 4) == SetOpReplace([(3, 4)])
 
     with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
@@ -345,12 +345,12 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
             {"id": 7, "name": "7", "email": "7@gmail.com"},
         ]
     )
-    delete_and_add(table, s3, metadata_store, [1], replacements)
+    delete_and_add(table, s3, metadata_store, [2], replacements)
     ids = set(metadata_store.all(table, s3)["id"].to_list())
     assert ids == {1, 2, 6, 7}
 
     assert metadata_store.get_table_version(table) == 5
-    assert metadata_store.get_op(table, 5) == SetOpDeleteAndAdd(([1], [4]))
+    assert metadata_store.get_op(table, 5) == SetOpDeleteAndAdd(([2], [5]))
 
 
 def test_simple_insert_fake():
