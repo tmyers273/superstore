@@ -1,6 +1,5 @@
 import io
 import json
-import logging
 import os
 from time import perf_counter
 
@@ -12,6 +11,7 @@ from ..local_s3 import LocalS3
 from ..metadata import MetadataStore
 from ..sqlite_metadata import SqliteMetadata
 from ..sweep import find_ids_with_most_overlap
+from ..util import timer
 from .run_test import build_table, delete_and_add, insert
 
 
@@ -120,46 +120,31 @@ def test_query_time():
         table, metadata, s3, table_name="sp-traffic", with_data=False
     ) as ctx:
         print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
-        s = perf_counter()
-        df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
-        df = df.to_polars()
-        e = perf_counter()
-
-        print(f"Time: {(e - s) * 1000:.0f}ms")
+        with timer("Time to get count"):
+            df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
+            df = df.to_polars()
         print(df)
 
-        s = perf_counter()
-        df = ctx.sql(
-            "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
-        )
-        df = df.to_polars()
-        e = perf_counter()
+        with timer("Time to get counts by advertiser_id"):
+            df = ctx.sql(
+                "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
+            )
+            df = df.to_polars()
 
-        print(f"Time: {(e - s) * 1000:.0f}ms")
         print(df)
 
-        s = perf_counter()
-        df = ctx.sql(
+        with timer("Time to get sum of clicks, impressions, cost by date"):
+            df = ctx.sql(
+                """
+                SELECT sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
+                FROM 'sp-traffic' 
+                WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
+                GROUP BY date
             """
-            SELECT sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
-            FROM 'sp-traffic' 
-            WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
-            GROUP BY date
-            """
-        )
-        # print(df.explain(verbose=True, analyze=True))
-        df = df.to_polars()
-        e = perf_counter()
+            )
+            df = df.to_polars()
 
-        print(f"Time: {(e - s) * 1000:.0f}ms")
         print(df)
-
-        logging.basicConfig(level=logging.DEBUG)
-
-        # plan = ctx.sql(
-        #     "EXPLAIN FORMAT TREE SELECT sum(clicks), sum(impressions), sum(cost) FROM 'sp-traffic' WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'"
-        # )
-        # print(plan)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
