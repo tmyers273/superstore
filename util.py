@@ -1,10 +1,16 @@
-from contextlib import contextmanager
 from time import perf_counter
 
 
-@contextmanager
-def timer(msg: str | None = None):
-    s = perf_counter()
-    yield
-    e = perf_counter()
-    print(f"{msg or 'Time taken'}: {(e - s) * 1000} ms")
+class timer:
+    def __init__(self, msg: str | None = None):
+        self.msg = msg
+        self.duration_ms = 0
+
+    def __enter__(self):
+        self.s = perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        e = perf_counter()
+        self.duration_ms = int(round((e - self.s) * 1000, 0))
+        print(f"{self.msg or 'Time taken'}: {self.duration_ms} ms")
