@@ -95,13 +95,21 @@ def test_query_time():
 
     # 626, 829, 831
 
-    # for mp in metadata.micropartitions(table, s3):
-    #     stats = mp.statistics()
-    #     for col in stats.columns:
-    #         if col.name == "advertiser_id":
-    #             print(f"{mp.id}: {col.min} - {col.max}")
-    #             break
+    cnt = 0
+    found = 0
+    search = "ENTITY2IMWE41VQFHYI"
+    for mp in metadata.micropartitions(table, s3):
+        # stats = mp.statistics()
+        for col in mp.stats.columns:
+            if col.name == "advertiser_id":
+                cnt += 1
+                if search >= col.min and search <= col.max:
+                    found += 1
+                    # print(f"{search} found in {mp.id}: {col.min} - {col.max}")
 
+    print(f"{search} found in {found}/{cnt} MPs")
+
+    # return
     # return
 
     # 24ms - raw
@@ -214,7 +222,7 @@ def test_clustering() -> None:
     # If we want to cap the total ram usage to 512mb,
     # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
     # or 512mb / 2 = 256mb
-    max_filesize = 128 * 1024 * 1024
+    max_filesize = 8 * 128 * 1024 * 1024  # 128mb
     total_size = 0
     for i, overlap in enumerate(overlaps):
         total_size += overlap.filesize
@@ -245,6 +253,8 @@ def test_clustering() -> None:
             df = new_df
         else:
             df = df.vstack(new_df)
+    if df is None:
+        raise Exception("No data found")
 
     print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
     if df.height != rows:
