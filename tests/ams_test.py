@@ -98,12 +98,14 @@ def test_query_time():
     table = create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/mps")
 
-    for mp in metadata.micropartitions(table, s3):
-        stats = mp.statistics()
-        for col in stats.columns:
-            if col.name == "advertiser_id":
-                print(f"{mp.id}: {col.min} - {col.max}")
-                break
+    # 626, 829, 831
+
+    # for mp in metadata.micropartitions(table, s3):
+    #     stats = mp.statistics()
+    #     for col in stats.columns:
+    #         if col.name == "advertiser_id":
+    #             print(f"{mp.id}: {col.min} - {col.max}")
+    #             break
 
     # return
 
@@ -140,7 +142,12 @@ def test_query_time():
 
         s = perf_counter()
         df = ctx.sql(
-            "SELECT sum(clicks), sum(impressions), sum(cost) FROM 'sp-traffic' WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'"
+            """
+            SELECT sum(clicks), sum(impressions), sum(cost), to_date(time_window_start) as date
+            FROM 'sp-traffic' 
+            WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
+            GROUP BY date
+            """
         )
         # print(df.explain(verbose=True, analyze=True))
         df = df.to_polars()
@@ -162,18 +169,6 @@ def test_clustering():
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     table = create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/mps")
-
-    # 24ms
-    # with build_table(table, metadata, s3, table_name="sp-traffic") as ctx:
-    #     s = perf_counter()
-    #     df = ctx.sql(
-    #         "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
-    #     )
-    #     df = df.to_polars()
-    #     e = perf_counter()
-
-    #     print(f"Time: {(e - s) * 1000:.0f}ms")
-    #     print(df)
 
     table = metadata.get_table("sp-traffic")
     if table is None:
@@ -264,8 +259,8 @@ def test_ams():
     for i, file in enumerate(files):
         print(f"Processing {file} ({i + 1}/{len(files)})")
         df = pl.read_parquet(file)
-        if i > 115:
-            break
+        # if i > 115:
+        #     break
 
         df = pl.read_parquet(file)
         insert(table, s3, metadata_store, df)
