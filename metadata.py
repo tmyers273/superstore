@@ -1,10 +1,9 @@
-from copy import deepcopy
-import json
 from typing import Generator, Protocol
-from .classes import Database, MicroPartition, Schema, Table
-from .s3 import S3Like
+
 import polars as pl
 
+from .classes import Database, MicroPartition, Schema, Table
+from .s3 import S3Like
 from .set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
 

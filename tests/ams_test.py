@@ -1,22 +1,18 @@
-import base64
 import io
 import json
 import logging
 import os
 from time import perf_counter
+
 import polars as pl
 import pytest
 
-from ..compress import compress
-
-from ..sweep import find_ids_with_most_overlap
-
-from ..classes import ColumnDefinitions, Table, Database, Schema
+from ..classes import ColumnDefinitions, Database, Schema, Table
 from ..local_s3 import LocalS3
-from ..metadata import FakeMetadataStore, MetadataStore
-from .run_test import build_table, delete_and_add, insert
-from ..s3 import FakeS3
+from ..metadata import MetadataStore
 from ..sqlite_metadata import SqliteMetadata
+from ..sweep import find_ids_with_most_overlap
+from .run_test import build_table, delete_and_add, insert
 
 
 def get_parquet_files(path: str) -> list[str]:

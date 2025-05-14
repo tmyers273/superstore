@@ -1,8 +1,7 @@
-from pydantic import BaseModel
-import polars as pl
-import base64
 import io
-import pyarrow.parquet as pq
+
+import polars as pl
+from pydantic import BaseModel
 
 
 class Header(BaseModel):
