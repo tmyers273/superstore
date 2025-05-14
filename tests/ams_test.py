@@ -98,6 +98,7 @@ def test_query_time():
     cnt = 0
     found = 0
     search = "ENTITY2IMWE41VQFHYI"
+    included_ids = []
     for mp in metadata.micropartitions(table, s3):
         # stats = mp.statistics()
         for col in mp.stats.columns:
@@ -105,6 +106,7 @@ def test_query_time():
                 cnt += 1
                 if search >= col.min and search <= col.max:
                     found += 1
+                    included_ids.append(mp.id)
                     # print(f"{search} found in {mp.id}: {col.min} - {col.max}")
 
     print(f"{search} found in {found}/{cnt} MPs")
@@ -125,7 +127,12 @@ def test_query_time():
     print(f"Starting to build table: {(perf_counter() - start) * 1000:.0f}ms")
     times = {}
     with build_table(
-        table, metadata, s3, table_name="sp-traffic", with_data=False
+        table,
+        metadata,
+        s3,
+        table_name="sp-traffic",
+        with_data=False,
+        included_mp_ids=set(included_ids),
     ) as ctx:
         print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
         with timer("Time to get count") as t:
@@ -166,14 +173,109 @@ def test_query_time():
 
 
 # @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering() -> None:
-    print("init")
+def test_clustering2() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
-    print("creating table")
     create_table_if_needed(metadata)
-    print("creating s3")
     s3 = LocalS3("ams_scratch/mps")
-    print("getting table")
+    table = metadata.get_table("sp-traffic")
+    if table is None:
+        raise Exception("Table not found")
+
+    stats: dict[int, Statistics] = {}
+    cnt = 0
+    found = 0
+    search = "ENTITY2IMWE41VQFHYI"
+    index: int | None = None
+    for mp in metadata.micropartitions(table, s3):
+        if index is None:
+            for col in mp.stats.columns:
+                if col.name == "advertiser_id":
+                    index = col.index
+                    break
+        if index is None:
+            raise Exception("advertiser_id not found")
+
+        # stats = mp.statistics()
+        col = mp.stats.columns[index]
+        cnt += 1
+        if search >= col.min and search <= col.max:
+            found += 1
+            if col.unique_count > 1:
+                stats[mp.id] = mp.stats
+
+    if index is None:
+        raise Exception("advertiser_id not found")
+
+    print(f"{search} found in {found}/{cnt} MPs")
+    stats_list: list[Statistics] = list(stats.values())
+    stats_list = sorted(
+        stats_list, key=lambda x: x.columns[index].unique_count, reverse=True
+    )
+
+    for stat in stats_list:
+        print(stat.columns[index].unique_count)
+
+    # Cap the total filesize of the parquet files
+    # We expect the ram usage of the df to be some
+    # multiple (2-5x?) of the parquet filesize.
+    #
+    # If we want to cap the total ram usage to 512mb,
+    # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
+    # or 512mb / 2 = 256mb
+    max_filesize = 128 * 1024 * 1024  # 128mb
+    total_size = 0
+    last = 0
+    for i, stat in enumerate(stats_list):
+        total_size += stat.filesize
+        if total_size > max_filesize:
+            last = i
+            break
+    if last == 0:
+        last = len(stats_list)
+
+    print(f"Found a total of {len(stats_list)} overlapping MPs")
+    stats_list = stats_list[:last]
+
+    print(
+        f"Found {len(stats_list)} overlapping MPs collectively under {max_filesize / 1024 / 1024:.2f}mb"
+    )
+
+    # Load each and vstack info a single df
+    df: pl.DataFrame | None = None
+    rows = 0
+    for stat in stats_list:
+        raw = s3.get_object("bucket", f"{stat.id}")
+        if raw is None:
+            raise Exception(f"Micropartition {stat.id} not found")
+
+        buffer = io.BytesIO(raw)
+
+        # Reset buffer position and read the dataframe
+        buffer.seek(0)
+        new_df = pl.read_parquet(buffer)
+
+        rows += new_df.height
+        if df is None:
+            df = new_df
+        else:
+            df = df.vstack(new_df)
+    if df is None:
+        raise Exception("No data found")
+
+    print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+    if df.height != rows:
+        raise Exception("Rows mismatch")
+
+    df = df.sort(["advertiser_id", "time_window_start"])
+    delete_ids = [stat.id for stat in stats_list]
+    delete_and_add(table, s3, metadata, delete_ids, df)
+
+
+# @pytest.mark.skip(reason="Skipping ams test")
+def test_clustering() -> None:
+    metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
+    create_table_if_needed(metadata)
+    s3 = LocalS3("ams_scratch/mps")
     table = metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
