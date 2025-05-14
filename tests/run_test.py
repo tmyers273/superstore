@@ -1,20 +1,21 @@
-from contextlib import contextmanager
-from datetime import datetime, timedelta
 import io
 import os
 import random
 import tempfile
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from time import perf_counter
-from datafusion import SessionContext
+
 import polars as pl
 import pyarrow.dataset as ds
+from datafusion import SessionContext
 
+from ..classes import ColumnDefinitions, Header, MicroPartition, Statistics, Table
+from ..compress import compress
 from ..local_s3 import LocalS3
-from ..classes import ColumnDefinitions, Header, MicroPartition, Table
 from ..metadata import FakeMetadataStore, MetadataStore
 from ..s3 import FakeS3, S3Like
 from ..set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
-from ..compress import compress
 from ..sqlite_metadata import SqliteMetadata
 
 
@@ -41,10 +42,13 @@ def insert(
     micro_partitions = []
     for part in parts:
         id = metadata_store.get_new_micropartition_id(table)
+        stats = Statistics.from_bytes(part)
+        stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=buffer.getvalue(),
+            data=part.getvalue(),
+            stats=stats,
         )
 
         # Try saving to S3
@@ -82,10 +86,13 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
         # Create a new micro partition
         id = metadata_store.get_new_micropartition_id(table)
+        stats = Statistics.from_bytes(buffer)
+        stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
+            stats=stats,
         )
 
         # Try saving to S3
@@ -114,10 +121,13 @@ def delete_and_add(
         id = current_id + i
 
         # Create a new micro partition
+        stats = Statistics.from_bytes(buffer)
+        stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
+            stats=stats,
         )
         mps.append(micro_partition)
 
@@ -160,10 +170,13 @@ def update(
 
         # Create a new micro partition
         id = metadata_store.get_new_micropartition_id(table)
+        stats = Statistics.from_bytes(buffer)
+        stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
+            stats=stats,
         )
 
         # Try saving to S3
@@ -350,6 +363,53 @@ def test_simple_insert_sqlite():
     metadata_store = SqliteMetadata("sqlite:///:memory:")
     s3 = FakeS3()
     simple_insert(metadata_store, s3)
+
+
+def check_statistics(metadata: MetadataStore, s3: S3Like):
+    table = Table(
+        id=1,
+        schema_id=1,
+        database_id=1,
+        name="users",
+        columns=[
+            ColumnDefinitions(name="id", type="Int64"),
+            ColumnDefinitions(name="name", type="String"),
+            ColumnDefinitions(name="email", type="String"),
+        ],
+    )
+
+    users = [
+        {"id": 1, "name": "John Doe", "email": "john.doe@example.com"},
+        {"id": 2, "name": "Jane Doe", "email": "jane.doe@example.com"},
+        {"id": 3, "name": "John Smith", "email": "john.smith@example.com"},
+    ]
+    df = pl.DataFrame(users)
+
+    insert(table, s3, metadata, df)
+
+    for mp in metadata.micropartitions(table, s3):
+        if mp.id == 0:
+            continue
+        stats = mp.stats
+        assert stats.rows == len(users)
+        assert stats.filesize > 0
+        id_col = stats.columns[0]
+        assert id_col.min == 1
+        assert id_col.max == 3
+        assert id_col.null_count == 0
+        assert id_col.unique_count == 3
+
+
+def test_statistics_fake():
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+    check_statistics(metadata_store, s3)
+
+
+def test_statistics_sqlite():
+    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    s3 = FakeS3()
+    check_statistics(metadata_store, s3)
 
 
 def test_stress():

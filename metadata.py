@@ -218,6 +218,7 @@ class FakeMetadataStore(MetadataStore):
             self.raw_micro_partitions[micro_partition.id] = {
                 "id": micro_partition.id,
                 "header": micro_partition.header,
+                "stats": micro_partition.stats,
             }
 
         self.table_versions[table.name] = current_version + 1
@@ -230,8 +231,8 @@ class FakeMetadataStore(MetadataStore):
 
     def get_new_micropartition_id(self, table: Table) -> int:
         if table.name not in self.micropartition_ids:
-            self.micropartition_ids[table.name] = 0
-            return 0
+            self.micropartition_ids[table.name] = 1
+            return 1
 
         self.micropartition_ids[table.name] += 1
         return self.micropartition_ids[table.name]
@@ -257,7 +258,10 @@ class FakeMetadataStore(MetadataStore):
                 raise ValueError(f"Micro partition `{metadata['id']}` not found")
 
             yield MicroPartition(
-                id=metadata["id"], header=metadata["header"], data=micro_partition_raw
+                id=metadata["id"],
+                header=metadata["header"],
+                data=micro_partition_raw,
+                stats=metadata["stats"],
             )
 
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
@@ -300,6 +304,7 @@ class FakeMetadataStore(MetadataStore):
             self.raw_micro_partitions[micro_partition.id] = {
                 "id": micro_partition.id,
                 "header": micro_partition.header,
+                "stats": micro_partition.stats,
             }
 
         self.table_versions[table.name] = current_version + 1
@@ -343,6 +348,7 @@ class FakeMetadataStore(MetadataStore):
             self.raw_micro_partitions[new_mp.id] = {
                 "id": new_mp.id,
                 "header": new_mp.header,
+                "stats": new_mp.stats,
             }
 
         self.table_versions[table.name] = current_version + 1
