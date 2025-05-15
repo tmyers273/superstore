@@ -25,7 +25,13 @@ def compress(
     min = int(round(max_file_size * (1 - tolerance), 0))
     max = max_file_size
 
-    records: list[tuple[int, int]] = []
+    # Use the first 10k as a guess
+    test_df = df.slice(0, 10_000)
+    test_buffer = _compress_part(test_df)
+
+    records: list[tuple[int, int]] = [
+        (test_buffer.tell(), test_df.height),
+    ]
 
     while len(df) > 0:
         avg_bytes_per_row = (
@@ -37,6 +43,7 @@ def compress(
         df = df.slice(rows)
 
         records.append((buffer.tell(), rows))
+        print(f"    {buffer.tell() / 1024 / 1024:.2f}MB, {rows:,} rows")
 
     # print(f"Build {len(parts)} parts from {len(df)} rows")
     # for r in records:
@@ -78,7 +85,8 @@ def _ratio_based_compress(
     # Start with our estimate, then adjust if needed
     rows = estimated_rows
     i = 0
-    while True:
+    max_iterations = 20  # Add a maximum iteration count
+    while i < max_iterations:  # Add a termination condition
         test_slice = df.slice(0, rows)
         _compress_part(test_slice, buffer)
         size = buffer.tell()
@@ -109,6 +117,9 @@ def _ratio_based_compress(
                 return buffer, 1
 
         i += 1
+
+    # If we exit the loop due to max iterations, return the current buffer
+    return buffer, rows
 
 
 def _compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.BytesIO:

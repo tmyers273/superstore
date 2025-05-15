@@ -8,6 +8,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    bindparam,
     create_engine,
     select,
 )
@@ -361,10 +362,10 @@ class SqliteMetadata(MetadataStore):
         with Session(self.engine) as session:
             # Get current micro partitions
             stmt = select(MicroPartitionMetadata).where(
-                MicroPartitionMetadata.table_name == table.name,
-                MicroPartitionMetadata.id.in_(ids),
+                MicroPartitionMetadata.id.in_(bindparam("ids", expanding=True))
             )
-            micro_partitions = session.execute(stmt).scalars().all()
+
+            micro_partitions = session.execute(stmt, {"ids": ids}).scalars().all()
 
             # Yield micro partitions
             for mp in micro_partitions:

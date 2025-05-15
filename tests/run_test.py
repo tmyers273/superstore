@@ -39,21 +39,30 @@ def insert(
     buffer.seek(0)
 
     # Create a new micro partition
+    print("Compressing...")
     parts = compress(items)
+    print(f"Creating micro partitions with {len(parts)} parts...")
     micro_partitions = []
-    for part in parts:
-        id = metadata_store.get_new_micropartition_id(table)
+    start_id = metadata_store.get_new_micropartition_id(table)
+    for i, part in enumerate(parts):
+        id = start_id + i  # TODO - fix! Hacky and prone to breaking
+        part.seek(0)
         stats = Statistics.from_bytes(part)
+        part.seek(0)
+
+        df = pl.read_parquet(io.BytesIO(part.getvalue()))
+        print(f"# rows for {id}: stats: {stats.rows}, actual: {df.height}")
         stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=part.getvalue(),
+            data=None,
             stats=stats,
         )
 
         # Try saving to S3
-        s3.put_object("bucket", str(id), buffer.getvalue())
+        part.seek(0)
+        s3.put_object("bucket", str(id), part.getvalue())
 
         micro_partitions.append(micro_partition)
 
@@ -218,16 +227,20 @@ def build_table(
         case LocalS3():
             wanted_ids = []
             s = perf_counter()
-            for p in metadata_store.micropartitions(
-                table, s3, version=version, with_data=with_data
-            ):
-                if included_mp_ids is not None and p.id not in included_mp_ids:
+
+            ids = metadata_store._get_ids(table, version)
+            for id in ids:
+                if included_mp_ids is not None and id not in included_mp_ids:
                     continue
-                wanted_ids.append(p.id)
+                wanted_ids.append(id)
+
             e = perf_counter()
             print(f"Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
 
-            base_dir = "ams_scratch/mps/bucket"
+            if table_name == "sp-traffic":
+                base_dir = "ams_scratch/mps/bucket"
+            else:
+                base_dir = "scratch/audit_log_items/mps/bucket"
             paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
             dataset = ds.dataset(paths, format="parquet")
             ctx.register_dataset(table_name, dataset)

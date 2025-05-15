@@ -51,16 +51,26 @@ class Statistics(BaseModel):
         # Define the statistics we want to compute for each column
         stats_operations = {
             "cardinality": lambda col: pl.col(col).n_unique(),
-            "min": lambda col: pl.col(col).min(),
-            "max": lambda col: pl.col(col).max(),
             "null_count": lambda col: pl.col(col).null_count(),
         }
 
         # Generate all statistics expressions
         stats_exprs = []
         for col in df.columns:
+            # Add all basic statistics
             for stat_name, operation in stats_operations.items():
                 stats_exprs.append(operation(col).alias(f"{col}_{stat_name}"))
+
+            # Handle min/max based on column type
+            col_dtype = df.schema[col]
+            if str(col_dtype).startswith("struct"):
+                # For struct columns, use null values
+                stats_exprs.append(pl.lit(None).alias(f"{col}_min"))
+                stats_exprs.append(pl.lit(None).alias(f"{col}_max"))
+            else:
+                # For non-struct columns, use regular min/max
+                stats_exprs.append(pl.col(col).min().alias(f"{col}_min"))
+                stats_exprs.append(pl.col(col).max().alias(f"{col}_max"))
 
         # Compute all statistics in a single pass
         stats = df.select(stats_exprs).to_dicts()[0]

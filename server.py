@@ -16,8 +16,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
-s3 = LocalS3("ams_scratch/mps")
+# db_path = "sqlite:///ams_scratch/ams.db"
+# s3_path = "ams_scratch/mps"
+# table_name = "sp-traffic"
+
+db_path = "sqlite:///scratch/audit_log_items/db.db"
+s3_path = "scratch/audit_log_items/mps"
+table_name = "audit_log_items"
+
+metadata = SqliteMetadata(db_path)
+s3 = LocalS3(s3_path)
 
 
 @app.get("/")
@@ -28,7 +36,7 @@ async def root():
 @app.get("/table/{table_id}")
 async def table(table_id: int):
     print(metadata.get_tables())
-    table = metadata.get_table("sp-traffic")
+    table = metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
@@ -36,7 +44,7 @@ async def table(table_id: int):
     total_rows = 0
     total_filesize = 0
     micropartitions = 0
-    for mp in metadata.micropartitions(table, s3):
+    for mp in metadata.micropartitions(table, s3, with_data=False):
         raw = mp.model_dump()
         del raw["data"]
         stats = mp.stats
