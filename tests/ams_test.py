@@ -76,15 +76,17 @@ def create_table_if_needed(metadata: MetadataStore) -> Table:
     return table
 
 
-def cleanup():
+def cleanup(
+    mp_path: str = "ams_scratch/mps/bucket", db_path: str = "ams_scratch/ams.db"
+):
     # Delete all *.parquet files in ams_scratch/mps/bucket
-    for root, dirs, files in os.walk("ams_scratch/mps/bucket"):
+    for root, dirs, files in os.walk(mp_path):
         for file in files:
             if file.endswith(".parquet"):
                 os.remove(os.path.join(root, file))
 
     # Delete sqlite db
-    os.remove("ams_scratch/ams.db")
+    os.remove(db_path)
 
 
 # @pytest.mark.skip(reason="Skipping ams test")
