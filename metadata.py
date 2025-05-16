@@ -110,12 +110,6 @@ class MetadataStore(Protocol):
 
         raise NotImplementedError
 
-    def get_new_micropartition_id(self, table: Table) -> int:
-        """
-        Returns a new, unused micropartition id.
-        """
-        raise NotImplementedError
-
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         """
         Reserve a list of micropartition ids for a table.
@@ -244,14 +238,6 @@ class FakeMetadataStore(MetadataStore):
         ids = [p.id for p in micro_partitions]
         self.ops[table.name].append(SetOpAdd(ids))
         self.current_micro_partitions[table.name].extend(ids)
-
-    def get_new_micropartition_id(self, table: Table) -> int:
-        if table.name not in self.micropartition_ids:
-            self.micropartition_ids[table.name] = 1
-            return 1
-
-        self.micropartition_ids[table.name] += 1
-        return self.micropartition_ids[table.name]
 
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         if table.name not in self.micropartition_ids:

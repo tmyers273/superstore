@@ -332,51 +332,6 @@ class SqliteMetadata(MetadataStore):
 
             session.commit()
 
-    def get_new_micropartition_id(self, table: Table) -> int:
-        """
-        Atomically allocate the next ID from sqlite_sequence.
-
-        Parameters
-        ----------
-        table : Table
-            Passed for API symmetry; not used because all micro-partitions share
-            the same AUTOINCREMENT counter.
-
-        Returns
-        -------
-        int
-            The ID just reserved.
-        """
-        seq_name = MicroPartitionMetadata.__tablename__  # "micro_partitions"
-
-        with Session(self.engine) as session:
-            session.execute(text("BEGIN IMMEDIATE"))  # write-lock DB
-
-            # Try to bump the existing row; fetch the new max.
-            new_id = session.execute(
-                text("""
-                UPDATE sqlite_sequence
-                SET seq = seq + 1
-                WHERE name = :name
-            RETURNING seq
-            """),
-                {"name": seq_name},
-            ).scalar_one_or_none()
-
-            # If the row didn't exist, create it at 1.
-            if new_id is None:
-                new_id = 1
-                session.execute(
-                    text("""
-                    INSERT INTO sqlite_sequence(name, seq)
-                    VALUES (:name, :seq)
-                """),
-                    {"name": seq_name, "seq": new_id},
-                )
-
-            session.commit()
-            return new_id
-
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         seq_name = MicroPartitionMetadata.__tablename__  # "micro_partitions"
 
