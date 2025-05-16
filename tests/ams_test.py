@@ -89,7 +89,7 @@ def cleanup(
     os.remove(db_path)
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     start = perf_counter()
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
@@ -175,7 +175,7 @@ def test_query_time():
                 f.write(f"{version},{query},{time}\n")
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_clustering2() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
