@@ -1,5 +1,7 @@
 import os
+import re
 
+import polars as pl
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -9,7 +11,9 @@ from classes import ColumnDefinitions, Database, Schema, Table
 from local_s3 import LocalS3
 from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
-from tests.run_test import build_table
+from tests.ams_test import get_parquet_files
+from tests.audit_log_items_test import create_table_if_needed, get_table
+from tests.run_test import build_table, insert
 
 load_dotenv()
 app = FastAPI()
@@ -73,6 +77,39 @@ async def table(table_id: int):
     out["total_filesize"] = total_filesize
     out["micropartitions"] = micropartitions
     return out
+
+
+@app.get("/ingest/audit-log-items")
+async def ingest_audit_log_items(limit: int | None = None):
+    files = get_parquet_files("/ingest/audit_log_items")
+    print("Found", len(files), "parquet files")
+
+    # Sort in numerical order, not lexicographical
+    def extract_number(filename):
+        match = re.search(r"audit_log_items_(\d+)-", filename)
+        if match:
+            return int(match.group(1))
+        return 0  # fallback
+
+    files.sort(key=extract_number)
+
+    table = get_table()
+    create_table_if_needed(metadata)
+
+    for i, file in enumerate(files):
+        if limit is not None and i >= limit:
+            break
+
+        print(f"Processing {file} ({i + 1}/{len(files)})")
+
+        df = pl.read_parquet(file)
+        df = df.sort(["audit_log_id", "id"])
+
+        insert(table, s3, metadata, df)
+        print(f"Inserted {file} with {df.height} rows")
+        os.rename(file, f"/done/{file}")
+
+    return {"message": "Ingested audit log items"}
 
 
 @app.get("/create-table-if-needed/audit-log-items")
