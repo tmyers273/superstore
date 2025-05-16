@@ -26,6 +26,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ${SS_DATA_DIR}:/data
+      - /ingest:/ingest
+      - /done:/done
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s

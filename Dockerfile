@@ -18,6 +18,8 @@ ENV DB_HOST=host.docker.internal
 ENV DATA_DIR=/data
 
 VOLUME /data
+VOLUME /ingest
+VOLUME /done
 
 # Expose port
 EXPOSE 8000
