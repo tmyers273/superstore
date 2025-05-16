@@ -364,6 +364,9 @@ class SqliteMetadata(MetadataStore):
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         seq_name = MicroPartitionMetadata.__tablename__  # "micro_partitions"
 
+        if number == 0:
+            return []
+
         with Session(self.engine) as session:
             session.execute(text("BEGIN IMMEDIATE"))
 

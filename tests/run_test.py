@@ -38,9 +38,9 @@ def insert(
     buffer.seek(0)
 
     # Create a new micro partition
-    print("Compressing...")
+    # print("Compressing...")
     parts = compress(items)
-    print(f"Creating micro partitions with {len(parts)} parts...")
+    # print(f"Creating micro partitions with {len(parts)} parts...")
     micro_partitions = []
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
 
@@ -51,7 +51,7 @@ def insert(
         part.seek(0)
 
         df = pl.read_parquet(io.BytesIO(part.getvalue()))
-        print(f"# rows for {id}: stats: {stats.rows}, actual: {df.height}")
+        # print(f"# rows for {id}: stats: {stats.rows}, actual: {df.height}")
         stats.id = id
         micro_partition = MicroPartition(
             id=id,
@@ -71,7 +71,6 @@ def insert(
 
 
 def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
-    # print(f"[mutation] Deleting {len(pks)} rows from {table.name}")
     # TODO: validate schema
     # TODO: error if pk is not found?
 
@@ -79,9 +78,8 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     current_version = metadata_store.get_table_version(table)
 
     # Load the parquet file
-    replacements: dict[int, MicroPartition] = {}
-    updated_ids = 0
-    new_mps: list[(int, io.BytesIO)] = []
+    new_mps: list[io.BytesIO] = []
+    old_ids = []
     for p in metadata_store.micropartitions(table, s3, version=current_version):
         df = p.dump()
         before_cnt = len(df)
@@ -92,14 +90,17 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         if after_cnt == before_cnt:
             continue
 
-        updated_ids += 1
+        old_ids.append(p.id)
+        if after_cnt == 0:
+            continue
 
         buffer = io.BytesIO()
         df.write_parquet(buffer)
-        new_mps.append((p.id, buffer))
+        new_mps.append(buffer)
 
+    replacements: list[MicroPartition] = []
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(new_mps))
-    for i, (old_id, buffer) in enumerate(new_mps):
+    for i, buffer in enumerate(new_mps):
         # Create a new micro partition
         id = reserved_ids[i]
         stats = Statistics.from_bytes(buffer)
@@ -114,10 +115,12 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         # Try saving to S3
         s3.put_object("bucket", str(id), buffer.getvalue())
 
-        replacements[old_id] = micro_partition
+        replacements.append(micro_partition)
 
     # Update metadata
-    metadata_store.replace_micro_partitions(table, current_version, replacements)
+    metadata_store.delete_and_add_micro_partitions(
+        table, current_version, old_ids, replacements
+    )
 
 
 def delete_and_add(
@@ -169,11 +172,9 @@ def update(
     replacements: dict[int, MicroPartition] = {}
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
-    existing_ids = set()
     for p in metadata_store.micropartitions(table, s3, version=current_version):
         df = p.dump()
         updated_items = items.filter(pl.col("id").is_in(df["id"]))
-        existing_ids.add(p.id)
 
         # TODO: only flag this for an update if something actually changed
 
@@ -198,14 +199,12 @@ def update(
             data=buffer.getvalue(),
             stats=stats,
         )
-        print("id is", id, reserved_ids)
 
         # Try saving to S3
         s3.put_object("bucket", str(id), buffer.getvalue())
 
         replacements[p.id] = micro_partition
         i += 1
-    print(existing_ids)
 
     # Update metadata
     metadata_store.replace_micro_partitions(table, current_version, replacements)
@@ -336,7 +335,7 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
 
     delete(table, s3, metadata_store, [3])
     assert metadata_store.get_table_version(table) == 3
-    assert metadata_store.get_op(table, 3) == SetOpReplace([(1, 3)])
+    assert metadata_store.get_op(table, 3) == SetOpDeleteAndAdd(([1], [3]))
 
     with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
@@ -446,6 +445,57 @@ def test_statistics_sqlite():
     metadata_store = SqliteMetadata("sqlite:///:memory:")
     s3 = FakeS3()
     check_statistics(metadata_store, s3)
+
+
+def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
+    table = Table(
+        id=1,
+        schema_id=1,
+        database_id=1,
+        name="users",
+        columns=[
+            ColumnDefinitions(name="id", type="Int64"),
+            ColumnDefinitions(name="name", type="String"),
+            ColumnDefinitions(name="email", type="String"),
+        ],
+    )
+
+    users = [
+        {"id": 1, "name": "John Doe", "email": "john.doe@example.com"},
+        {"id": 2, "name": "Jane Doe", "email": "jane.doe@example.com"},
+        {"id": 3, "name": "John Smith", "email": "john.smith@example.com"},
+    ]
+    df = pl.DataFrame(users)
+
+    insert(table, s3, metadata, df)
+
+    users = [
+        {"id": 4, "name": "Bill Doe", "email": "bill.doe@example.com"},
+        {"id": 5, "name": "Bill Smith", "email": "bill.smith@example.com"},
+    ]
+    df = pl.DataFrame(users)
+
+    insert(table, s3, metadata, df)
+
+    delete(table, s3, metadata, [1, 2, 3])
+
+    ids = set()
+    for mp in metadata.micropartitions(table, s3):
+        ids.add(mp.id)
+
+    assert ids == {2}
+
+
+def test_empty_mps_are_deleted_fake():
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+    check_empty_mps_are_deleted(metadata_store, s3)
+
+
+def test_empty_mps_are_deleted_sqlite():
+    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    s3 = FakeS3()
+    check_empty_mps_are_deleted(metadata_store, s3)
 
 
 @pytest.mark.skip(reason="Takes too long to run")

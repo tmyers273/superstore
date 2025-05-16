@@ -244,17 +244,11 @@ class FakeMetadataStore(MetadataStore):
             self.micropartition_ids[table.name] = number
             start = 1
             end = start + number
-            print(
-                f"Reserving {number} micropartition ids for table {table.name}: {start}..{end} -> ({list(range(start, end))})"
-            )
             return list(range(1, number + 1))
 
         start = self.micropartition_ids[table.name] + 1
         end = start + number
         self.micropartition_ids[table.name] = end - 1
-        print(
-            f"Reserving {number} micropartition ids for table {table.name}: {start}..{end} -> ({list(range(start, end))})"
-        )
         return list(range(start, end))
 
     def micropartitions(

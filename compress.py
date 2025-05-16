@@ -43,7 +43,7 @@ def compress(
         df = df.slice(rows)
 
         records.append((buffer.tell(), rows))
-        print(f"    {buffer.tell() / 1024 / 1024:.2f}MB, {rows:,} rows")
+        # print(f"    {buffer.tell() / 1024 / 1024:.2f}MB, {rows:,} rows")
 
     # print(f"Build {len(parts)} parts from {len(df)} rows")
     # for r in records:
