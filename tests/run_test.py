@@ -80,6 +80,8 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
     # Load the parquet file
     replacements: dict[int, MicroPartition] = {}
+    updated_ids = 0
+    new_mps: list[(int, io.BytesIO)] = []
     for p in metadata_store.micropartitions(table, s3):
         df = p.dump()
         before_cnt = len(df)
@@ -90,25 +92,29 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         if after_cnt == before_cnt:
             continue
 
+        updated_ids += 1
+
         buffer = io.BytesIO()
         df.write_parquet(buffer)
-        buffer.seek(0)
+        new_mps.append((p.id, buffer))
 
+    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(new_mps))
+    for i, (old_id, buffer) in enumerate(new_mps):
         # Create a new micro partition
-        id = metadata_store.get_new_micropartition_id(table)
+        id = reserved_ids[i]
         stats = Statistics.from_bytes(buffer)
         stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=buffer.getvalue(),
+            data=None,
             stats=stats,
         )
 
         # Try saving to S3
         s3.put_object("bucket", str(id), buffer.getvalue())
 
-        replacements[p.id] = micro_partition
+        replacements[old_id] = micro_partition
 
     # Update metadata
     metadata_store.replace_micro_partitions(table, current_version, replacements)
@@ -126,9 +132,9 @@ def delete_and_add(
     mps = []
 
     dfs = compress(new_df)
-    current_id = metadata_store.get_new_micropartition_id(table)
+    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(dfs))
     for i, buffer in enumerate(dfs):
-        id = current_id + i
+        id = reserved_ids[i]
 
         # Create a new micro partition
         stats = Statistics.from_bytes(buffer)
@@ -161,9 +167,13 @@ def update(
 
     # Load the parquet file
     replacements: dict[int, MicroPartition] = {}
+    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
+    i = 0
+    existing_ids = set()
     for p in metadata_store.micropartitions(table, s3):
         df = p.dump()
         updated_items = items.filter(pl.col("id").is_in(df["id"]))
+        existing_ids.add(p.id)
 
         # TODO: only flag this for an update if something actually changed
 
@@ -179,7 +189,7 @@ def update(
         buffer.seek(0)
 
         # Create a new micro partition
-        id = metadata_store.get_new_micropartition_id(table)
+        id = reserved_ids[i]
         stats = Statistics.from_bytes(buffer)
         stats.id = id
         micro_partition = MicroPartition(
@@ -188,11 +198,14 @@ def update(
             data=buffer.getvalue(),
             stats=stats,
         )
+        print("id is", id, reserved_ids)
 
         # Try saving to S3
         s3.put_object("bucket", str(id), buffer.getvalue())
 
         replacements[p.id] = micro_partition
+        i += 1
+    print(existing_ids)
 
     # Update metadata
     metadata_store.replace_micro_partitions(table, current_version, replacements)

@@ -378,6 +378,8 @@ class SqliteMetadata(MetadataStore):
             return new_id
 
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+        seq_name = MicroPartitionMetadata.__tablename__  # "micro_partitions"
+
         with Session(self.engine) as session:
             session.execute(text("BEGIN IMMEDIATE"))
 
@@ -387,9 +389,9 @@ class SqliteMetadata(MetadataStore):
                 UPDATE sqlite_sequence
                 SET seq = seq + :n
                 WHERE name = :tbl
-            RETURNING seq
+                RETURNING seq
             """),
-                {"n": number, "tbl": table.name},
+                {"n": number, "tbl": seq_name},
             )
 
             new_max = res.scalar_one_or_none()
@@ -402,7 +404,7 @@ class SqliteMetadata(MetadataStore):
                     INSERT INTO sqlite_sequence(name, seq)
                     VALUES (:tbl, :seq)
                 """),
-                    {"tbl": table.name, "seq": new_max},
+                    {"tbl": seq_name, "seq": new_max},
                 )
 
             session.commit()
