@@ -13,7 +13,7 @@
     reverse_proxy {
         to blue-web:8000 green-web:8000
         
-        health_uri /health
+        health_uri /
         health_interval 5s
         health_timeout 2s
         health_status 200
