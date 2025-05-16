@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-export REGISTRY=ghcr.io/merchjar
+export REGISTRY=ghcr.io/tmyers273
 export TAG=latest
 
 # Required environment variables
