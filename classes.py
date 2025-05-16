@@ -1,5 +1,6 @@
 import datetime
 import io
+from typing import List
 
 import polars as pl
 from pydantic import BaseModel
@@ -144,8 +145,8 @@ class Database(BaseModel):
 
 class Schema(BaseModel):
     id: int
-    database_id: int
     name: str
+    database_id: int
 
 
 class Table(BaseModel):
@@ -153,4 +154,4 @@ class Table(BaseModel):
     schema_id: int
     database_id: int
     name: str
-    columns: list[ColumnDefinitions]
+    columns: List[ColumnDefinitions]

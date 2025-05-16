@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -188,8 +189,12 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
         )
         df = df.to_polars()
 
+    data = df.to_dicts()
+    for row in data:
+        row["meta"] = json.loads(row["meta"])
+
     return {
-        "items": df.to_dicts(),
+        "data": data,
         "total": total,
         "page": page,
         "per_page": per_page,
