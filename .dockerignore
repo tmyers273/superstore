@@ -44,7 +44,6 @@ docker-compose.yml
 docker-compose.*.yml
 
 # Testing
-tests/
 py_ingestion/tests/
 
 **/*.csv
