@@ -347,58 +347,36 @@ class SqliteMetadata(MetadataStore):
 
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         with Session(self.engine) as session:
-            # First, find the current max ID to start from
-            stmt = text("""
-                SELECT seq FROM sqlite_sequence 
-                WHERE name = :table_name
-            """)
-            current_max = session.execute(
-                stmt, {"table_name": MicroPartitionMetadata.__tablename__}
-            ).scalar()
+            session.execute(text("BEGIN IMMEDIATE"))
 
-            # If no entries yet, initialize it. This creates a dummy record,
-            # then deletes it, which will set the current value of the
-            # sequence to 1, making the first "real" value 2.
-            if current_max is None:
-                # Create a dummy record to initialize the sequence properly
-                # This leaves the sequence number at 1, which would make the
-                # first "real" value 2.
-                dummy = MicroPartitionMetadata(table_name=table.name, stats={})
-                session.add(dummy)
-                session.flush()
-                session.delete(dummy)
-
-                # To work around that, we manually set the sequence number to 0,
-                # so our first "real" value is 1
-                session.execute(
-                    text(
-                        "UPDATE sqlite_sequence SET seq = :new_max WHERE name = :table_name"
-                    ),
-                    {
-                        "new_max": 0,
-                        "table_name": MicroPartitionMetadata.__tablename__,
-                    },
-                )
-
-                current_max = 0
-
-            # Calculate the new IDs
-            start_id = current_max + 1
-            end_id = start_id + number - 1
-
-            # Update the sequence counter to reserve these IDs
-            session.execute(
-                text(
-                    "UPDATE sqlite_sequence SET seq = :new_max WHERE name = :table_name"
-                ),
-                {"new_max": end_id, "table_name": MicroPartitionMetadata.__tablename__},
+            # Try to bump an existing row and fetch the new max
+            res = session.execute(
+                text("""
+                UPDATE sqlite_sequence
+                SET seq = seq + :n
+                WHERE name = :tbl
+            RETURNING seq
+            """),
+                {"n": number, "tbl": table.name},
             )
 
-            # Commit to ensure the sequence update is persisted
+            new_max = res.scalar_one_or_none()
+
+            # Row wasn’t there → create it with the desired value
+            if new_max is None:
+                new_max = number
+                session.execute(
+                    text("""
+                    INSERT INTO sqlite_sequence(name, seq)
+                    VALUES (:tbl, :seq)
+                """),
+                    {"tbl": table.name, "seq": new_max},
+                )
+
             session.commit()
 
-            # Return the reserved IDs
-            return list(range(start_id, end_id + 1))
+        start = new_max - number + 1
+        return list(range(start, new_max + 1))
 
     def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         ops = self.get_ops(table)
