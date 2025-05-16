@@ -2,9 +2,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .local_s3 import LocalS3
-from .sqlite_metadata import SqliteMetadata
-from .tests.run_test import build_table
+from local_s3 import LocalS3
+from sqlite_metadata import SqliteMetadata
+from tests.run_test import build_table
 
 app = FastAPI()
 
@@ -41,7 +41,7 @@ async def table(table_id: int):
     if table is None:
         return {"error": "Table not found"}
 
-    mps = []
+    mps: list[dict] = []
     total_rows = 0
     total_filesize = 0
     micropartitions = 0

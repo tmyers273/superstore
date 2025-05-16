@@ -17,10 +17,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, declarative_base
 
-from .classes import Database, Header, MicroPartition, Schema, Statistics, Table
-from .metadata import MetadataStore
-from .s3 import S3Like
-from .set_ops import (
+from classes import Database, Header, MicroPartition, Schema, Statistics, Table
+from metadata import MetadataStore
+from s3 import S3Like
+from set_ops import (
     SetOp,
     SetOpAdd,
     SetOpDelete,
@@ -383,7 +383,7 @@ class SqliteMetadata(MetadataStore):
 
             new_max = res.scalar_one_or_none()
 
-            # Row wasn’t there → create it with the desired value
+            # Row wasn't there → create it with the desired value
             if new_max is None:
                 new_max = number
                 session.execute(

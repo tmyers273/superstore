@@ -11,13 +11,13 @@ import pyarrow.dataset as ds
 import pytest
 from datafusion import SessionContext
 
-from ..classes import ColumnDefinitions, Header, MicroPartition, Statistics, Table
-from ..compress import compress
-from ..local_s3 import LocalS3
-from ..metadata import FakeMetadataStore, MetadataStore
-from ..s3 import FakeS3, S3Like
-from ..set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
-from ..sqlite_metadata import SqliteMetadata
+from classes import ColumnDefinitions, Header, MicroPartition, Statistics, Table
+from compress import compress
+from local_s3 import LocalS3
+from metadata import FakeMetadataStore, MetadataStore
+from s3 import FakeS3, S3Like
+from set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
+from sqlite_metadata import SqliteMetadata
 
 
 class Metadata:
