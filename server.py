@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from classes import ColumnDefinitions, Database, Schema, Table
 from local_s3 import LocalS3
+from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
 from tests.run_test import build_table
 
@@ -71,6 +73,53 @@ async def table(table_id: int):
     out["total_filesize"] = total_filesize
     out["micropartitions"] = micropartitions
     return out
+
+
+@app.get("/create-table-if-needed/audit-log-items")
+async def create_table_if_needed_audit_log_items():
+    def get_table() -> Table:
+        return Table(
+            id=1,
+            schema_id=1,
+            database_id=1,
+            name="audit_log_items",
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="audit_log_id", type="Int64"),
+                ColumnDefinitions(name="target_id", type="Int64"),
+                ColumnDefinitions(name="target_type_id", type="Int16"),
+                ColumnDefinitions(name="meta", type="String"),
+                ColumnDefinitions(name="created_at", type="Timestamp"),
+                ColumnDefinitions(name="updated_at", type="Timestamp"),
+            ],
+        )
+
+    def create_table_if_needed(metadata: MetadataStore) -> Table:
+        database = metadata.get_database("db")
+        if database is None:
+            database = metadata.create_database(Database(id=0, name="db"))
+
+        schema = metadata.get_schema("default")
+        if schema is None:
+            schema = metadata.create_schema(
+                Schema(id=0, name="default", database_id=database.id)
+            )
+
+        table = metadata.get_table("audit_log_items")
+        if table is None:
+            table = get_table()
+            table.schema_id = schema.id
+            table.database_id = database.id
+            metadata.create_table(table)
+
+        table = get_table()
+        if metadata.get_table(table.name) is None:
+            metadata.create_table(table)
+
+        return table
+
+    create_table_if_needed(metadata)
+    return {"message": "Table created"}
 
 
 @app.get("/audit-log-items")
