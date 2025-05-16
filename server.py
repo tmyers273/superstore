@@ -107,7 +107,7 @@ async def ingest_audit_log_items(limit: int | None = None):
 
         insert(table, s3, metadata, df)
         print(f"Inserted {file} with {df.height} rows")
-        os.rename(file, f"/done/{file}")
+        os.rename(file, f"/done{file}")
 
     return {"message": "Ingested audit log items"}
 
