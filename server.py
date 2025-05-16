@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import shutil
@@ -198,6 +199,10 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
         "total": total,
         "page": page,
         "per_page": per_page,
+        "current_page": page,
+        "from": (page - 1) * per_page + 1,
+        "to": (page - 1) * per_page + per_page,
+        "last_page": math.ceil(total / per_page),
     }
 
 
