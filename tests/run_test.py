@@ -249,10 +249,14 @@ def build_table(
             e = perf_counter()
             print(f"Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
 
-            if table_name == "sp-traffic":
-                base_dir = "ams_scratch/mps/bucket"
-            else:
-                base_dir = "scratch/audit_log_items/mps/bucket"
+            data_dir = os.getenv("DATA_DIR")
+            if data_dir is None:
+                raise ValueError("DATA_DIR is not set")
+            base_dir = os.path.join(data_dir, table.name, "mps/bucket")
+            # if table_name == "sp-traffic":
+            #     base_dir = "ams_scratch/mps/bucket"
+            # else:
+            #     base_dir = "scratch/audit_log_items/mps/bucket"
             paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
             dataset = ds.dataset(paths, format="parquet")
             ctx.register_dataset(table_name, dataset)
