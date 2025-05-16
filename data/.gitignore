@@ -1,1 +1,2 @@
 *.parquet
+audit_log_items/
