@@ -559,3 +559,9 @@ def test_stress():
 
         print(df)
         assert df.to_dicts()[0]["clicks"] == sum(i["clicks"] for i in items)
+
+
+# A minimal implementation for the required build_table function
+def build_table(name=None):
+    print(f"Building table: {name}")
+    return {}  # Return a placeholder
