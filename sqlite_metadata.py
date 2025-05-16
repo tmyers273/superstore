@@ -11,6 +11,7 @@ from sqlalchemy import (
     bindparam,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.orm import Session, declarative_base
 
@@ -38,6 +39,7 @@ class TableVersion(Base):
 
 class MicroPartitionMetadata(Base):
     __tablename__ = "micro_partitions"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
@@ -343,6 +345,61 @@ class SqliteMetadata(MetadataStore):
             result = session.execute(stmt).scalar()
             return 1 if result is None else result + 1
 
+    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+        with Session(self.engine) as session:
+            # First, find the current max ID to start from
+            stmt = text("""
+                SELECT seq FROM sqlite_sequence 
+                WHERE name = :table_name
+            """)
+            current_max = session.execute(
+                stmt, {"table_name": MicroPartitionMetadata.__tablename__}
+            ).scalar()
+
+            # If no entries yet, initialize it. This creates a dummy record,
+            # then deletes it, which will set the current value of the
+            # sequence to 1, making the first "real" value 2.
+            if current_max is None:
+                # Create a dummy record to initialize the sequence properly
+                # This leaves the sequence number at 1, which would make the
+                # first "real" value 2.
+                dummy = MicroPartitionMetadata(table_name=table.name, stats={})
+                session.add(dummy)
+                session.flush()
+                session.delete(dummy)
+
+                # To work around that, we manually set the sequence number to 0,
+                # so our first "real" value is 1
+                session.execute(
+                    text(
+                        "UPDATE sqlite_sequence SET seq = :new_max WHERE name = :table_name"
+                    ),
+                    {
+                        "new_max": 0,
+                        "table_name": MicroPartitionMetadata.__tablename__,
+                    },
+                )
+
+                current_max = 0
+
+            # Calculate the new IDs
+            start_id = current_max + 1
+            end_id = start_id + number - 1
+
+            # Update the sequence counter to reserve these IDs
+            session.execute(
+                text(
+                    "UPDATE sqlite_sequence SET seq = :new_max WHERE name = :table_name"
+                ),
+                {"new_max": end_id, "table_name": MicroPartitionMetadata.__tablename__},
+            )
+
+            # Commit to ensure the sequence update is persisted
+            session.commit()
+
+            # Return the reserved IDs
+            return list(range(start_id, end_id + 1))
+
     def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         ops = self.get_ops(table)
         if version is not None:
@@ -414,31 +471,3 @@ class SqliteMetadata(MetadataStore):
             self.bump_table_version(session, table, current_version)
 
             session.commit()
-        # if self.get_table_version(table) != current_version:
-        #     raise ValueError("Version mismatch")
-
-        # if table.name not in self.current_micro_partitions:
-        #     raise ValueError(f"Table {table.name} has no micro partitions")
-
-        # # Make sure all the ids exist
-        # current_ids = {p for p in self.current_micro_partitions[table.name]}
-        # for old_id in delete_ids:
-        #     if old_id not in current_ids:
-        #         raise ValueError(f"Micro partition {old_id} not found: {current_ids}")
-
-        # # Replace the micro partitions in metadata
-        # index = {v: i for i, v in enumerate(self.current_micro_partitions[table.name])}
-        # for old_id in delete_ids:
-        #     del self.current_micro_partitions[table.name][index[old_id]]
-
-        # for new_mp in new_mps:
-        #     self.current_micro_partitions[table.name].append(new_mp.id)
-        #     self.raw_micro_partitions[new_mp.id] = {
-        #         "id": new_mp.id,
-        #         "header": new_mp.header,
-        #     }
-
-        # self.table_versions[table.name] = current_version + 1
-
-        # new_mp_ids = [p.id for p in new_mps]
-        # self.ops[table.name].append(SetOpDeleteAndAdd((delete_ids, new_mp_ids)))

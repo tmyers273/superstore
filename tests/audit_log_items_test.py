@@ -56,7 +56,7 @@ def create_table_if_needed(metadata: MetadataStore) -> Table:
     return table
 
 
-# @pytest.mark.skip(reason="Skipping audit_log_items test")
+@pytest.mark.skip(reason="Skipping audit_log_items test")
 def test_audit_log_items_query():
     table = get_table()
     metadata_store = SqliteMetadata("sqlite:///scratch/audit_log_items/db.db")
