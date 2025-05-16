@@ -103,34 +103,6 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
 
 @app.get("/databases")
 async def databases():
-    # metadata.create_database(Database(id=0, name="ams"))
-    # metadata.create_schema(Schema(id=0, name="default", database_id=1))
-    # metadata.create_table(
-    #     Table(
-    #         id=0,
-    #         name="sp-traffic",
-    #         schema_id=1,
-    #         database_id=1,
-    #         columns=[
-    #             ColumnDefinitions(name="idempotency_id", type="String"),
-    #             ColumnDefinitions(name="dataset_id", type="String"),
-    #             ColumnDefinitions(name="marketplace_id", type="String"),
-    #             ColumnDefinitions(name="currency", type="String"),
-    #             ColumnDefinitions(name="advertiser_id", type="String"),
-    #             ColumnDefinitions(name="campaign_id", type="String"),
-    #             ColumnDefinitions(name="ad_group_id", type="String"),
-    #             ColumnDefinitions(name="ad_id", type="String"),
-    #             ColumnDefinitions(name="keyword_id", type="String"),
-    #             ColumnDefinitions(name="keyword_text", type="String"),
-    #             ColumnDefinitions(name="match_type", type="String"),
-    #             ColumnDefinitions(name="placement", type="String"),
-    #             ColumnDefinitions(name="time_window_start", type="String"),
-    #             ColumnDefinitions(name="clicks", type="Int64"),
-    #             ColumnDefinitions(name="impressions", type="Int64"),
-    #             ColumnDefinitions(name="cost", type="Float64"),
-    #         ],
-    #     )
-    # )
     databases = metadata.get_databases()
     schemas = metadata.get_schemas()
     tables = metadata.get_tables()
