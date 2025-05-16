@@ -162,6 +162,21 @@ async def create_table_if_needed_audit_log_items():
     return {"message": "Table created"}
 
 
+@app.get("/total-audit-log-items")
+async def audit_log_items_total():
+    table = metadata.get_table(table_name)
+    if table is None:
+        return {"error": "Table not found"}
+
+    with build_table(
+        table, metadata, s3, table_name="audit_log_items", with_data=False
+    ) as ctx:
+        total = ctx.sql("SELECT max(audit_log_id) FROM 'audit_log_items'").to_polars()
+        total = list(total.to_dicts()[0].values())[0]
+
+    return {"total": total}
+
+
 @app.get("/audit-log-items")
 async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
     table = metadata.get_table(table_name)
