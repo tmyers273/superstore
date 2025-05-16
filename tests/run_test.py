@@ -28,7 +28,6 @@ def insert(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
     # TODO: validate schema
-    # print(f"[mutation] Inserting {len(items)} rows into {table.name}")
 
     # Get the current table version number
     current_version = metadata_store.get_table_version(table)
@@ -44,6 +43,7 @@ def insert(
     print(f"Creating micro partitions with {len(parts)} parts...")
     micro_partitions = []
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
+
     for i, part in enumerate(parts):
         id = reserved_ids[i]
         part.seek(0)
