@@ -82,7 +82,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     replacements: dict[int, MicroPartition] = {}
     updated_ids = 0
     new_mps: list[(int, io.BytesIO)] = []
-    for p in metadata_store.micropartitions(table, s3):
+    for p in metadata_store.micropartitions(table, s3, version=current_version):
         df = p.dump()
         before_cnt = len(df)
         df = df.filter(~pl.col("id").is_in(pks))
@@ -170,7 +170,7 @@ def update(
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
     existing_ids = set()
-    for p in metadata_store.micropartitions(table, s3):
+    for p in metadata_store.micropartitions(table, s3, version=current_version):
         df = p.dump()
         updated_items = items.filter(pl.col("id").is_in(df["id"]))
         existing_ids.add(p.id)

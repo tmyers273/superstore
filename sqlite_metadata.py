@@ -12,7 +12,9 @@ from sqlalchemy import (
     create_engine,
     select,
     text,
+    update,
 )
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session, declarative_base
 
 from .classes import Database, Header, MicroPartition, Schema, Statistics, Table
@@ -240,27 +242,37 @@ class SqliteMetadata(MetadataStore):
 
     def get_table_version(self, table: Table) -> int:
         with Session(self.engine) as session:
-            table_version = session.get(TableVersion, table.name)
-            if not table_version:
-                table_version = TableVersion(table_name=table.name, version=0)
-                session.add(table_version)
-                session.commit()
-            return int(table_version.version)
+            version = self._get_table_version(session, table)
+            session.commit()
+            return version
+
+    def _get_table_version(self, session: Session, table: Table) -> int:
+        table_version = session.get(TableVersion, table.name)
+        if not table_version:
+            table_version = TableVersion(table_name=table.name, version=0)
+            session.add(table_version)
+        return int(table_version.version)
 
     def add_micro_partitions(
         self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
         with Session(self.engine) as session:
-            if self.get_table_version(table) != current_version:
-                session.rollback()
+            session.execute(text("BEGIN IMMEDIATE"))
+
+            if self._get_table_version(session, table) != current_version:
                 raise ValueError("Version mismatch")
 
             # Add micro partition metadata
-            for mp in micro_partitions:
-                metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
-                )
-                session.add(metadata)
+            session.bulk_save_objects(
+                [
+                    MicroPartitionMetadata(
+                        id=mp.id,
+                        table_name=table.name,
+                        stats=mp.stats.model_dump(),
+                    )
+                    for mp in micro_partitions
+                ]
+            )
 
             # Add operation
             operation = Operation(
@@ -272,7 +284,7 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            self.bump_table_version(session, table, current_version)
+            self._bump_table_version(session, table, current_version)
 
             session.commit()
 
@@ -289,16 +301,27 @@ class SqliteMetadata(MetadataStore):
 
         return out
 
-    def bump_table_version(self, session: Session, table: Table, current_version: int):
-        table_version = session.get(TableVersion, table.name)
-        if table_version is None:
-            table_version = TableVersion(table_name=table.name, version=0)
-            session.add(table_version)
-        elif table_version.version != current_version:
-            session.rollback()
-            raise ValueError("Version mismatch")
+    def _bump_table_version(self, session: Session, table: Table, current_version: int):
+        tbl = table.name
 
-        table_version.version = current_version + 1
+        # insert row if absent
+        session.execute(
+            insert(TableVersion)
+            .values(table_name=tbl, version=current_version)
+            .on_conflict_do_nothing(index_elements=["table_name"])  # SQLite ≥3.24
+        )
+
+        # atomic optimistic bump
+        rows = session.execute(
+            update(TableVersion)
+            .where(
+                TableVersion.table_name == tbl, TableVersion.version == current_version
+            )
+            .values(version=TableVersion.version + 1)
+        ).rowcount
+
+        if rows == 0:
+            raise ValueError("Version mismatch")
 
     def replace_micro_partitions(
         self,
@@ -307,16 +330,22 @@ class SqliteMetadata(MetadataStore):
         replacements: dict[int, MicroPartition],
     ):
         with Session(self.engine) as session:
-            if self.get_table_version(table) != current_version:
-                session.rollback()
+            session.execute(text("BEGIN IMMEDIATE"))
+
+            if self._get_table_version(session, table) != current_version:
                 raise ValueError("Version mismatch")
 
             # Add new micro partition metadata
-            for mp in replacements.values():
-                metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
-                )
-                session.add(metadata)
+            session.bulk_save_objects(
+                [
+                    MicroPartitionMetadata(
+                        id=mp.id,
+                        table_name=table.name,
+                        stats=mp.stats.model_dump(),
+                    )
+                    for mp in replacements.values()
+                ]
+            )
 
             # Add operation
             operation = Operation(
@@ -328,7 +357,7 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            self.bump_table_version(session, table, current_version)
+            self._bump_table_version(session, table, current_version)
 
             session.commit()
 
@@ -414,16 +443,22 @@ class SqliteMetadata(MetadataStore):
         new_mps: list[MicroPartition],
     ):
         with Session(self.engine) as session:
-            if self.get_table_version(table) != current_version:
-                session.rollback()
+            session.execute(text("BEGIN IMMEDIATE"))
+
+            if self._get_table_version(session, table) != current_version:
                 raise ValueError("Version mismatch")
 
             # Add new micro partition metadata
-            for mp in new_mps:
-                metadata = MicroPartitionMetadata(
-                    id=mp.id, table_name=table.name, stats=mp.stats.model_dump()
-                )
-                session.add(metadata)
+            session.bulk_save_objects(
+                [
+                    MicroPartitionMetadata(
+                        id=mp.id,
+                        table_name=table.name,
+                        stats=mp.stats.model_dump(),
+                    )
+                    for mp in new_mps
+                ]
+            )
 
             # Add operation
             operation = Operation(
@@ -435,6 +470,6 @@ class SqliteMetadata(MetadataStore):
             session.add(operation)
 
             # Update table version
-            self.bump_table_version(session, table, current_version)
+            self._bump_table_version(session, table, current_version)
 
             session.commit()
