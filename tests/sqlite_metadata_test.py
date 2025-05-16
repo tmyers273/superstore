@@ -69,7 +69,7 @@ class TestSqliteMetadata(unittest.TestCase):
 
             # Verify the sequence was properly updated
             result = session.execute(
-                text("SELECT seq FROM sqlite_sequence WHERE name = 'test_table'")
+                text("SELECT seq FROM sqlite_sequence WHERE name = 'micro_partitions'")
             ).scalar()
             self.assertEqual(result, 19)
 
