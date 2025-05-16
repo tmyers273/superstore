@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .local_s3 import LocalS3
 from .sqlite_metadata import SqliteMetadata
+from .tests.run_test import build_table
 
 app = FastAPI()
 
@@ -62,6 +63,42 @@ async def table(table_id: int):
     out["total_filesize"] = total_filesize
     out["micropartitions"] = micropartitions
     return out
+
+
+@app.get("/audit-log-items")
+async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
+    table = metadata.get_table(table_name)
+    if table is None:
+        return {"error": "Table not found"}
+
+    with build_table(
+        table, metadata, s3, table_name="audit_log_items", with_data=False
+    ) as ctx:
+        total = ctx.sql(
+            f"""
+            SELECT count(*) FROM 'audit_log_items'
+            WHERE audit_log_id = {audit_log_id}
+        """
+        ).to_polars()
+        total = list(total.to_dicts()[0].values())[0]
+
+        df = ctx.sql(
+            f"""
+            SELECT * FROM 'audit_log_items'
+            WHERE audit_log_id = {audit_log_id}
+            ORDER BY id
+            LIMIT {per_page}
+            OFFSET {(page - 1) * per_page}
+        """
+        )
+        df = df.to_polars()
+
+    return {
+        "items": df.to_dicts(),
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
 @app.get("/databases")
