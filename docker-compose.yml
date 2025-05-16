@@ -1,0 +1,47 @@
+# version: "3"
+
+services:
+  caddy:
+    image: caddy:2
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - webgateway
+
+  blue-web: &web
+    image: ${REGISTRY}/blob_storage:${TAG:-latest}
+    networks:
+      - webgateway
+    # deploy:
+    #   replicas: 1
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=host.docker.internal
+      - DB_HOST=host.docker.internal
+      - DATA_DIR=/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${SS_DATA_DIR}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 4s
+      retries: 3 # 10s timeout = 40 * 250ms
+      start_period: 10s
+      start_interval: 250ms
+
+  green-web:
+    <<: *web
+
+networks:
+  webgateway:
+    driver: bridge
+    ipam:
+      config:
+        # Force a constant subnet to allow UFW to connect through
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
