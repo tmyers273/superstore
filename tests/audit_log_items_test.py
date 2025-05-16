@@ -4,13 +4,13 @@ from time import perf_counter
 import polars as pl
 import pytest
 
-from ..classes import ColumnDefinitions, Database, Schema, Table
-from ..local_s3 import LocalS3
-from ..metadata import MetadataStore
-from ..sqlite_metadata import SqliteMetadata
-from ..util import timer
-from .ams_test import cleanup, get_parquet_files
-from .run_test import build_table, insert
+from classes import ColumnDefinitions, Database, Schema, Table
+from local_s3 import LocalS3
+from metadata import MetadataStore
+from sqlite_metadata import SqliteMetadata
+from tests.ams_test import cleanup, get_parquet_files
+from tests.run_test import build_table, insert
+from util import timer
 
 
 def get_table() -> Table:

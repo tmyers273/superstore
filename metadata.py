@@ -130,6 +130,18 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
+    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+        """
+        Returns the set of micropartition IDs for a table at a given version.
+        """
+        raise NotImplementedError
+
+    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+        """
+        Returns a dataframe containing all the data for the table.
+        """
+        raise NotImplementedError
+
 
 class FakeMetadataStore(MetadataStore):
     def __init__(self) -> None:
@@ -281,6 +293,17 @@ class FakeMetadataStore(MetadataStore):
                 data=micro_partition_raw,
                 stats=metadata["stats"],
             )
+
+    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+        if version is None:
+            return set(self.current_micro_partitions[table.name])
+        else:
+            if table.name not in self.ops:
+                raise ValueError(f"Table {table.name} has no archived versions")
+            if len(self.ops[table.name]) < version:
+                raise ValueError(f"Version {version} not found")
+
+            return set(apply(set(), self.ops[table.name][:version]))
 
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
