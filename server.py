@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 
 import polars as pl
 import uvicorn
@@ -107,7 +108,7 @@ async def ingest_audit_log_items(limit: int | None = None):
 
         insert(table, s3, metadata, df)
         print(f"Inserted {file} with {df.height} rows")
-        os.rename(file, f"/done{file}")
+        shutil.move(file, f"/done{file}")
 
     return {"message": "Ingested audit log items"}
 
