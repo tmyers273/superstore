@@ -1,4 +1,7 @@
+import os
+
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,6 +9,7 @@ from local_s3 import LocalS3
 from sqlite_metadata import SqliteMetadata
 from tests.run_test import build_table
 
+load_dotenv()
 app = FastAPI()
 
 # Add CORS middleware
@@ -22,9 +26,12 @@ app.add_middleware(
 # s3_path = "ams_scratch/mps"
 # table_name = "sp-traffic"
 
-db_path = "sqlite:///scratch/audit_log_items/db.db"
-s3_path = "scratch/audit_log_items/mps"
+data_dir = os.getenv("DATA_DIR")
+db_path = f"sqlite:///{data_dir}/db.db"
+s3_path = f"{data_dir}/audit_log_items/mps"
 table_name = "audit_log_items"
+print(f"data_dir: {data_dir}")
+print(f"S3 Path: {s3_path}")
 
 metadata = SqliteMetadata(db_path)
 s3 = LocalS3(s3_path)
