@@ -43,9 +43,9 @@ def insert(
     parts = compress(items)
     print(f"Creating micro partitions with {len(parts)} parts...")
     micro_partitions = []
-    start_id = metadata_store.get_new_micropartition_id(table)
+    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
     for i, part in enumerate(parts):
-        id = start_id + i  # TODO - fix! Hacky and prone to breaking
+        id = reserved_ids[i]
         part.seek(0)
         stats = Statistics.from_bytes(part)
         part.seek(0)
