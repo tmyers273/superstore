@@ -5,8 +5,8 @@ import unittest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..classes import Database, Schema, Table
-from ..sqlite_metadata import SqliteMetadata
+from classes import Database, Schema, Table
+from sqlite_metadata import SqliteMetadata
 
 
 class TestSqliteMetadata(unittest.TestCase):

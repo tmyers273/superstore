@@ -1,7 +1,7 @@
-from ..sqlite_metadata import SqliteMetadata
-from ..classes import ColumnDefinitions, Database, Schema, Table
-from ..metadata import FakeMetadataStore, MetadataStore
-from ..s3 import FakeS3, S3Like
+from classes import ColumnDefinitions, Database, Schema, Table
+from metadata import FakeMetadataStore, MetadataStore
+from s3 import FakeS3, S3Like
+from sqlite_metadata import SqliteMetadata
 
 
 def table_creation(metadata_store: MetadataStore, s3: S3Like):
@@ -38,19 +38,19 @@ def table_creation(metadata_store: MetadataStore, s3: S3Like):
     assert len(schemas) == 1
     assert schemas[0].id == 1
     assert schemas[0].name == "default"
-    schema = metadata_store.get_schema("default")
-    assert schema is not None
-    assert schema.id == 1
-    assert schema.name == "default"
+    schema_obj = metadata_store.get_schema("default")
+    assert schema_obj is not None
+    assert schema_obj.id == 1
+    assert schema_obj.name == "default"
 
     tables = metadata_store.get_tables()
     assert len(tables) == 1
     assert tables[0].id == 1
     assert tables[0].name == "users"
-    table = metadata_store.get_table("users")
-    assert table is not None
-    assert table.id == 1
-    assert table.name == "users"
+    table_obj = metadata_store.get_table("users")
+    assert table_obj is not None
+    assert table_obj.id == 1
+    assert table_obj.name == "users"
 
 
 def test_table_creation_fake():

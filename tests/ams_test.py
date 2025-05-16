@@ -5,13 +5,13 @@ from time import perf_counter
 import polars as pl
 import pytest
 
-from ..classes import ColumnDefinitions, Database, Schema, Statistics, Table
-from ..local_s3 import LocalS3
-from ..metadata import MetadataStore
-from ..sqlite_metadata import SqliteMetadata
-from ..sweep import find_ids_with_most_overlap
-from ..util import timer
-from .run_test import build_table, delete_and_add, insert
+from classes import ColumnDefinitions, Database, Schema, Statistics, Table
+from local_s3 import LocalS3
+from metadata import MetadataStore
+from sqlite_metadata import SqliteMetadata
+from sweep import find_ids_with_most_overlap
+from tests.run_test import build_table, delete_and_add, insert
+from util import timer
 
 
 def get_parquet_files(path: str) -> list[str]:
