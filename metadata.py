@@ -74,6 +74,12 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
+    def get_table_version(self, table: Table) -> int:
+        """
+        Returns the version of the table.
+        """
+        raise NotImplementedError
+
     def add_micro_partitions(
         self, table: Table, version: int, micro_partitions: list[MicroPartition]
     ):
@@ -107,6 +113,12 @@ class MetadataStore(Protocol):
     def get_new_micropartition_id(self, table: Table) -> int:
         """
         Returns a new, unused micropartition id.
+        """
+        raise NotImplementedError
+
+    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+        """
+        Reserve a list of micropartition ids for a table.
         """
         raise NotImplementedError
 
