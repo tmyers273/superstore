@@ -51,19 +51,33 @@ async def root():
     return {"message": "Hello World"}
 
 
+def sort_column_to_key(sortColumn: str):
+    if sortColumn == "id":
+        return lambda x: x["id"]
+    elif sortColumn == "rows":
+        return lambda x: x["stats"]["rows"]
+    elif sortColumn == "filesize":
+        return lambda x: x["stats"]["filesize"]
+    else:
+        raise ValueError(f"Invalid sort column: {sortColumn}")
+
+
 @app.get("/table/{table_id}")
-async def table(table_id: int, page: int = 1, per_page: int = 30):
+async def table(
+    table_id: int,
+    page: int = 1,
+    pageSize: int = 30,
+    sortColumn: str = "id",
+    sortDirection: str = "asc",
+):
     print(metadata.get_tables())
     table = metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
-    mps: list[dict] = []
     total_rows = 0
     total_filesize = 0
-    total_mps = 0
-    micropartitions = 0
-    skip = (page - 1) * per_page
+    all_mps: list[dict] = []
     for i, mp in enumerate(metadata.micropartitions(table, s3, with_data=False)):
         raw = mp.model_dump()
         del raw["data"]
@@ -71,19 +85,19 @@ async def table(table_id: int, page: int = 1, per_page: int = 30):
         total_rows += stats.rows
         total_filesize += stats.filesize
         raw["stats"] = stats.model_dump()
-        micropartitions += 1
-        total_mps += 1
+        all_mps.append(raw)
 
-        if i >= skip and len(mps) < per_page:
-            mps.append(raw)
+    all_mps.sort(key=sort_column_to_key(sortColumn), reverse=sortDirection == "desc")
+    skip = (page - 1) * pageSize
+    mps = all_mps[skip : skip + pageSize]
 
     out = table.model_dump()
     out["mps"] = mps
     out["total_rows"] = total_rows
     out["total_filesize"] = total_filesize
-    out["micropartitions"] = micropartitions
+    out["micropartitions"] = len(all_mps)
 
-    out["total_pages"] = math.ceil(total_mps / per_page)
+    out["total_pages"] = math.ceil(len(all_mps) / pageSize)
     out["current_page"] = page
 
     return out
