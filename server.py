@@ -52,7 +52,7 @@ async def root():
 
 
 @app.get("/table/{table_id}")
-async def table(table_id: int):
+async def table(table_id: int, page: int = 1, per_page: int = 30):
     print(metadata.get_tables())
     table = metadata.get_table(table_name)
     if table is None:
@@ -61,8 +61,10 @@ async def table(table_id: int):
     mps: list[dict] = []
     total_rows = 0
     total_filesize = 0
+    total_mps = 0
     micropartitions = 0
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    skip = (page - 1) * per_page
+    for i, mp in enumerate(metadata.micropartitions(table, s3, with_data=False)):
         raw = mp.model_dump()
         del raw["data"]
         stats = mp.stats
@@ -70,8 +72,9 @@ async def table(table_id: int):
         total_filesize += stats.filesize
         raw["stats"] = stats.model_dump()
         micropartitions += 1
+        total_mps += 1
 
-        if len(mps) < 30:
+        if i >= skip and len(mps) < per_page:
             mps.append(raw)
 
     out = table.model_dump()
@@ -79,6 +82,10 @@ async def table(table_id: int):
     out["total_rows"] = total_rows
     out["total_filesize"] = total_filesize
     out["micropartitions"] = micropartitions
+
+    out["total_pages"] = math.ceil(total_mps / per_page)
+    out["current_page"] = page
+
     return out
 
 
