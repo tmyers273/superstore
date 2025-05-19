@@ -176,24 +176,24 @@ class Table(BaseModel):
     totally ordered by the sort keys.
     """
 
-    @field_validator("cluster_keys")
+    @field_validator("sort_keys")
     @classmethod
-    def validate_cluster_keys(cls, v, info):
+    def validate_sort_keys(cls, v, info):
         if v is not None and info.data.get("partition_keys") is not None:
             overlap = set(v) & set(info.data["partition_keys"])
             if overlap:
                 raise ValueError(
-                    f"Cluster keys cannot overlap with partition keys. Overlapping keys: {overlap}"
+                    f"Sort keys cannot overlap with partition keys. Overlapping keys: {overlap}"
                 )
         return v
 
     @field_validator("partition_keys")
     @classmethod
     def validate_partition_keys(cls, v, info):
-        if v is not None and info.data.get("cluster_keys") is not None:
-            overlap = set(v) & set(info.data["cluster_keys"])
+        if v is not None and info.data.get("sort_keys") is not None:
+            overlap = set(v) & set(info.data["sort_keys"])
             if overlap:
                 raise ValueError(
-                    f"Partition keys cannot overlap with cluster keys. Overlapping keys: {overlap}"
+                    f"Partition keys cannot overlap with sort keys. Overlapping keys: {overlap}"
                 )
         return v
