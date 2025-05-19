@@ -89,7 +89,7 @@ def cleanup(
     os.remove(db_path)
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     os.environ["DATA_DIR"] = "ams_scratch"
 

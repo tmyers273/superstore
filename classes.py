@@ -3,7 +3,7 @@ import io
 from typing import List
 
 import polars as pl
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Header(BaseModel):
@@ -155,3 +155,27 @@ class Table(BaseModel):
     database_id: int
     name: str
     columns: List[ColumnDefinitions]
+    partition_keys: list[str] | None = None
+    cluster_keys: list[str] | None = None
+
+    @field_validator("cluster_keys")
+    @classmethod
+    def validate_cluster_keys(cls, v, info):
+        if v is not None and info.data.get("partition_keys") is not None:
+            overlap = set(v) & set(info.data["partition_keys"])
+            if overlap:
+                raise ValueError(
+                    f"Cluster keys cannot overlap with partition keys. Overlapping keys: {overlap}"
+                )
+        return v
+
+    @field_validator("partition_keys")
+    @classmethod
+    def validate_partition_keys(cls, v, info):
+        if v is not None and info.data.get("cluster_keys") is not None:
+            overlap = set(v) & set(info.data["cluster_keys"])
+            if overlap:
+                raise ValueError(
+                    f"Partition keys cannot overlap with cluster keys. Overlapping keys: {overlap}"
+                )
+        return v
