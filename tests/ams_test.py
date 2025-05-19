@@ -89,12 +89,14 @@ def cleanup(
     os.remove(db_path)
 
 
-@pytest.mark.skip(reason="Skipping ams test")
+# @pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
+    os.environ["DATA_DIR"] = "ams_scratch"
+
     start = perf_counter()
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     table = create_table_if_needed(metadata)
-    s3 = LocalS3("ams_scratch/mps")
+    s3 = LocalS3("ams_scratch/sp-traffic/mps")
 
     # 626, 829, 831
 
@@ -114,20 +116,7 @@ def test_query_time():
 
     print(f"{search} found in {found}/{cnt} MPs")
 
-    # return
-    # return
-
-    # 24ms - raw
-    # 19ms, 17s - after one
-    # 15ms after 2
-    # 18ms
-    # 15ms
-    # 13ms
-    # 14ms
-    # 15ms
-    # 12ms
-
-    print(f"Starting to build table: {(perf_counter() - start) * 1000:.0f}ms")
+    start = perf_counter()
     times = {}
     with build_table(
         table,
@@ -155,12 +144,18 @@ def test_query_time():
         with timer("Time to get sum of clicks, impressions, cost by date") as t:
             df = ctx.sql(
                 """
-                SELECT campaign_id, ad_group_id, ad_id, sum(clicks), sum(impressions), sum(cost), date
+                SELECT cast(campaign_id as bigint) as campaign_id, cast(ad_group_id as bigint) as ad_group_id, cast(ad_id as bigint) as ad_id, sum(clicks), sum(impressions), sum(cost), date
                 FROM 'sp-traffic' 
-                WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'
-                GROUP BY date, campaign_id, ad_group_id, ad_id, keyword_id
+                WHERE advertiser_id = 'ENTITY2IMWE41VQFHYI'  and 
+                (
+                    (time_window_start >= '2025-05-01 00:00' and time_window_start < '2025-05-02 00:00') or 
+                    (time_window_start >= '2025-05-02 00:00' and time_window_start < '2025-05-03 00:00') or 
+                    (time_window_start >= '2025-05-03 00:00' and time_window_start < '2025-05-04 00:00') 
+                )
+                GROUP BY date, campaign_id, ad_group_id, ad_id
             """
             )
+            # print(df.explain(verbose=True, analyze=True))
             df = df.to_polars()
 
         times["certain_advertiser_specific_dates"] = t.duration_ms
@@ -170,16 +165,16 @@ def test_query_time():
         print(df)
         print(times)
 
-        with open("times.csv", "a") as f:
-            for query, time in times.items():
-                f.write(f"{version},{query},{time}\n")
+        # with open("times.csv", "a") as f:
+        #     for query, time in times.items():
+        #         f.write(f"{version},{query},{time}\n")
 
 
 @pytest.mark.skip(reason="Skipping ams test")
 def test_clustering2() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
-    s3 = LocalS3("ams_scratch/mps")
+    s3 = LocalS3("ams_scratch/sp-traffic/mps")
     table = metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
@@ -215,8 +210,8 @@ def test_clustering2() -> None:
         stats_list, key=lambda x: x.columns[index].unique_count, reverse=True
     )
 
-    for stat in stats_list:
-        print(stat.columns[index].unique_count)
+    # for stat in stats_list:
+    #     print(stat.columns[index].unique_count)
 
     # Cap the total filesize of the parquet files
     # We expect the ram usage of the df to be some

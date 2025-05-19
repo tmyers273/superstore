@@ -247,7 +247,7 @@ def build_table(
                 wanted_ids.append(id)
 
             e = perf_counter()
-            print(f"Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
+            print(f"    Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
 
             data_dir = os.getenv("DATA_DIR")
             if data_dir is None:
@@ -258,8 +258,14 @@ def build_table(
             # else:
             #     base_dir = "scratch/audit_log_items/mps/bucket"
             paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+            s = perf_counter()
             dataset = ds.dataset(paths, format="parquet")
+            e = perf_counter()
+            print(f"    Time to create dataset: {(e - s) * 1000} ms")
+            s = perf_counter()
             ctx.register_dataset(table_name, dataset)
+            e = perf_counter()
+            print(f"    Time to register dataset: {(e - s) * 1000} ms")
             yield ctx
         case _:
             raise ValueError(f"Unsupported S3 type: {type(s3)}")

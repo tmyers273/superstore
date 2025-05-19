@@ -9,6 +9,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from classes import ColumnDefinitions, Database, Schema, Table
 from local_s3 import LocalS3
@@ -49,6 +50,17 @@ s3 = LocalS3(s3_path)
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/auth/login")
+async def login(request: LoginRequest):
+    print(request)
+    return {"user": {"id": 1, "name": "Demo User", "email": request.email}}
 
 
 def sort_column_to_key(sortColumn: str):
@@ -213,6 +225,40 @@ async def audit_log_items_total():
         total = list(total.to_dicts()[0].values())[0]
 
     return {"total": total}
+
+
+class ExecuteRequest(BaseModel):
+    table_name: str
+    query: str
+    page: int = 1
+    per_page: int = 30
+
+
+@app.post("/execute")
+async def execute(request: ExecuteRequest):
+    table = metadata.get_table(request.table_name)
+    if table is None:
+        return {"error": "Table not found"}
+
+    with build_table(
+        table, metadata, s3, table_name=request.table_name, with_data=False
+    ) as ctx:
+        total = ctx.sql(request.query).to_polars()
+        total = list(total.to_dicts()[0].values())[0]
+
+        skip = (request.page - 1) * request.per_page
+        out = total.slice(skip, request.per_page).to_dicts()
+
+    return {
+        "data": out,
+        "total": total,
+        "page": request.page,
+        "per_page": request.per_page,
+        "current_page": request.page,
+        "from": skip + 1,
+        "to": skip + request.per_page,
+        "last_page": math.ceil(total / request.per_page),
+    }
 
 
 @app.get("/audit-log-items")
