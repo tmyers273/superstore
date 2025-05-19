@@ -156,7 +156,25 @@ class Table(BaseModel):
     name: str
     columns: List[ColumnDefinitions]
     partition_keys: list[str] | None = None
-    cluster_keys: list[str] | None = None
+    """
+    Partition keys are used to phsyically partition the data into
+    separate files. This creates a hive-like directory structure.
+    
+    Example: if partitions_keys = ["user_id","date"], then the
+             dirs would be:
+               /user_id=1/date=2025-01-01/
+               /user_id=1/date=2025-01-02/
+               /user_id=2/date=2025-01-01/
+    """
+    sort_keys: list[str] | None = None
+    """
+    Sort keys are used to preserve sorting in a micropartition.
+    They are also used during reclustering to find MPs eligible
+    for merging.
+    
+    The ideal end state after maintenance is that all MPs are
+    totally ordered by the sort keys.
+    """
 
     @field_validator("cluster_keys")
     @classmethod
