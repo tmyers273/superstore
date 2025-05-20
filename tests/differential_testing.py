@@ -6,6 +6,7 @@
 # The basic idea is that we run our database and sqlite side by side, performing
 # the same operations on both. If there is ever any difference, then we flag that
 # as a bug.
+import io
 import random
 from time import perf_counter
 from typing import Generator, Protocol
@@ -15,6 +16,7 @@ from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
+from metadata import MetadataStore
 from s3 import FakeS3
 from sqlite_metadata import SqliteMetadata
 from tests.run_test import delete, insert, update
@@ -65,6 +67,7 @@ class DifferentialRunnerSqlite(DifferentialRunner):
             __table_args__ = {"sqlite_autoincrement": True}
 
             id = Column(Integer, primary_key=True, autoincrement=True)
+            account_id = Column(Integer, nullable=False)
             name = Column(String, nullable=False)
             email = Column(String, nullable=False)
             count = Column(Integer, nullable=False)
@@ -110,10 +113,11 @@ class DifferentialRunnerSqlite(DifferentialRunner):
             return dict_items
 
 
-class DifferentialRunnerFake(DifferentialRunner):
-    def __init__(self):
-        # self.metadata = FakeMetadataStore()
-        self.metadata = SqliteMetadata("sqlite:///:memory:")
+class DifferentialRunnerSuperstore(DifferentialRunner):
+    def __init__(
+        self, metadata: MetadataStore, partition_keys: list[str] | None = None
+    ):
+        self.metadata = metadata
         self.s3 = FakeS3()
 
         self.db = self.metadata.create_database(Database(id=0, name="test"))
@@ -127,6 +131,7 @@ class DifferentialRunnerFake(DifferentialRunner):
                 database_id=self.db.id,
                 schema_id=self.schema.id,
                 columns=[],
+                partition_keys=partition_keys,
             )
         )
 
@@ -147,7 +152,40 @@ class DifferentialRunnerFake(DifferentialRunner):
     def check_invariants(self):
         # TODO: if there are partition keys, make sure that all the MPs don't violate
         # TODO: if there are partition keys, make sure all the MPs have the correct prefix
-        pass
+        if self.table.partition_keys:
+            for mp in self.metadata.micropartitions(
+                self.table, self.s3, with_data=False
+            ):
+                # Make sure the MP has a key prefix
+                if mp.key_prefix is None:
+                    raise ValueError(f"Micropartition {mp.id} has no key prefix")
+
+                # Make sure the MP prefix contains all the partition keys
+                parts = mp.key_prefix.split("/")[:-1]
+                parts = [part.split("=")[0] for part in parts]
+                assert parts == self.table.partition_keys, (
+                    f"Micropartition {mp.id} has incorrect key prefix: {mp.key_prefix}"
+                )
+
+                # Make sure the MP exists in S3
+                key = f"{mp.key_prefix}{mp.id}"
+                raw = self.s3.get_object("bucket", key)
+                assert raw is not None, f"Micropartition {key} not found in s3"
+                part = io.BytesIO(raw)
+                df = pl.read_parquet(part)
+
+                # Finally, make sure the MP contains only one tuple per partition key
+                #
+                # If the partition key is "account_id", then there should only be
+                # one unique account_id in the MP
+                #
+                # If there are multiple partition keys, then there should only be
+                # one unique tuple per partition key
+                #
+                # ie if the partition keys are ["account_id", "region"], then there
+                # should only be one unique tuple in the MP
+                cnt = df.group_by(self.table.partition_keys).n_unique().height
+                assert 1 == cnt, f"Micropartition {key} has duplicate rows\n\n{df}"
 
     def all(self) -> list[dict]:
         df = self.metadata.all(self.table, self.s3)
@@ -171,6 +209,7 @@ class OpGenerator:
     def _gen_insert(self) -> InsertOp:
         count = self.rng.randint(0, 10)
         ids = []
+        account_ids = []
         name = []
         email = []
 
@@ -183,6 +222,7 @@ class OpGenerator:
             ids.append(id)
             name.append(f"{id}")
             email.append(f"{id}@{id}.com")
+            account_ids.append(id % 20)
             self.used_ids.add(id)
 
         assert len(ids) == len(name) == len(email)
@@ -193,6 +233,7 @@ class OpGenerator:
                     "id": ids,
                     "name": name,
                     "email": email,
+                    "account_id": account_ids,
                     "count": [len(self.ops)] * len(ids),
                 }
             )
@@ -203,16 +244,18 @@ class OpGenerator:
         ids = self.rng.sample(list(self.used_ids), count)
         names = []
         emails = []
-
+        account_ids = []
         for id in ids:
             names.append(f"{id}")
             emails.append(f"{id}@{id}.com")
+            account_ids.append(id % 20)
 
         df = pl.DataFrame(
             {
                 "id": ids,
                 "name": names,
                 "email": emails,
+                "account_id": account_ids,
                 "count": [len(self.ops)] * count,
             }
         )
@@ -245,8 +288,9 @@ class OpGenerator:
 
 # @pytest.mark.skip(reason="Takes too long to run")
 def test_differential_testing():
+    metadata = SqliteMetadata("sqlite:///:memory:")
     sqlite = DifferentialRunnerSqlite()
-    fake = DifferentialRunnerFake()
+    fake = DifferentialRunnerSuperstore(metadata, partition_keys=["account_id"])
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -260,10 +304,12 @@ def test_differential_testing():
         start = perf_counter()
         fake.apply(op)
         fake_apply_times += perf_counter() - start
+        fake.check_invariants()
 
         start = perf_counter()
         sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
+        sqlite.check_invariants()
 
         start = perf_counter()
         fake_res = fake.all()
