@@ -105,22 +105,20 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     old_mp_ids = []
 
     remaining_pks = set(pks)
-    if len(pks) == 1:
-        min_pk_id = pks[0]
-        max_pk_id = pks[0]
-    else:
-        min_pk_id = min(*pks)
-        max_pk_id = max(*pks)
+    min_pk_id = min(remaining_pks)
+    max_pk_id = max(remaining_pks)
 
     for p in metadata_store.micropartitions(
         table, s3, version=current_version, with_data=False
     ):
+        if len(remaining_pks) == 0:
+            break
+
         stats = p.stats.get("id")
         if stats is None:
             raise ValueError(f"Micro partition {p.id} has no id column statistics")
 
         if not (stats.min <= max_pk_id and stats.max >= min_pk_id):
-            print("Skip via metadta!")
             continue
 
         key = f"{p.key_prefix or ''}{p.id}"
@@ -132,19 +130,28 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
         # df = p.dump()
         before_cnt = len(df)
-        df = df.filter(~pl.col("id").is_in(pks))
-        after_cnt = len(df)
+        df_filtered = df.filter(~pl.col("id").is_in(pks))
+        after_cnt = len(df_filtered)
 
         # Skip if no rows were deleted from this micro partition
         if after_cnt == before_cnt:
             continue
+
+        # Remove the IDs we found from remaining_pks
+        found_ids = set(df.filter(pl.col("id").is_in(pks))["id"].to_list())
+        remaining_pks -= found_ids
+
+        # Recalculate min and max if we still have remaining IDs
+        if remaining_pks:
+            min_pk_id = min(remaining_pks)
+            max_pk_id = max(remaining_pks)
 
         old_mp_ids.append(p.id)
         if after_cnt == 0:
             continue
 
         buffer = io.BytesIO()
-        df.write_parquet(buffer)
+        df_filtered.write_parquet(buffer)
         new_mps.append((p.key_prefix, buffer))
 
     replacements: list[MicroPartition] = []

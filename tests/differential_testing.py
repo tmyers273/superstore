@@ -18,7 +18,6 @@ from classes import Database, Schema, Table
 from metadata import FakeMetadataStore
 from s3 import FakeS3
 from tests.run_test import delete, insert, update
-from util import timer
 
 
 class DifferentialOp:
@@ -133,14 +132,14 @@ class DifferentialRunnerFake(DifferentialRunner):
     def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
-                with timer("fake insert op"):
-                    insert(self.table, self.s3, self.metadata, op.df)
+                # with timer("fake insert op"):
+                insert(self.table, self.s3, self.metadata, op.df)
             case UpdateOp():
-                with timer("fake update op"):
-                    update(self.table, self.s3, self.metadata, op.df)
+                # with timer("fake update op"):
+                update(self.table, self.s3, self.metadata, op.df)
             case DeleteOp():
-                with timer("fake delete op"):
-                    delete(self.table, self.s3, self.metadata, op.ids)
+                # with timer("fake delete op"):
+                delete(self.table, self.s3, self.metadata, op.ids)
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
