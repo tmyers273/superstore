@@ -191,6 +191,7 @@ def delete_and_add(
     metadata_store: MetadataStore,
     delete_ids: list[int],
     new_df: pl.DataFrame,
+    key_prefix: str | None = None,
 ):
     """
     Deletes a number of micropartitions and adds a new set of micropartitions.
@@ -199,11 +200,17 @@ def delete_and_add(
     Args:
     - delete_ids is a list of the micropartition ids to delete.
     """
+    if table.partition_keys is not None and key_prefix is None:
+        raise ValueError("key_prefix is required if table has a partition key")
+
+    if table.partition_keys is None and key_prefix is not None:
+        raise ValueError("key_prefix is not allowed if table has no partition key")
+
     current_version = metadata_store.get_table_version(table)
 
     mps = []
 
-    print("In delete and add", new_df)
+    # print("In delete and add", new_df)
     dfs = compress(new_df)
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(dfs))
     for i, buffer in enumerate(dfs):
@@ -217,11 +224,13 @@ def delete_and_add(
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
             stats=stats,
+            key_prefix=key_prefix,
         )
         mps.append(micro_partition)
 
         # Try saving to S3
-        s3.put_object("bucket", str(id), buffer.getvalue())
+        key = f"{key_prefix or ''}{id}"
+        s3.put_object("bucket", key, buffer.getvalue())
 
     metadata_store.delete_and_add_micro_partitions(
         table, current_version, delete_ids, mps
@@ -310,7 +319,7 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
                     col_index = col.index
                 break
 
-    print("Preparing sweep")
+    # print("Preparing sweep")
     to_sweep: dict[str, list[tuple[str, str, int]]] = {}
     for prefix, stats_per_key in stats.items():
         for stat in stats_per_key.values():
@@ -319,9 +328,10 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
                 to_sweep[prefix] = []
             to_sweep[prefix].append((col.min, col.max, stat.id))
 
-    print(f"Finding overlap of {len(to_sweep)} MPs")
+    # print(f"Finding overlap of {len(to_sweep)} MPs")
     overlaps: list[Statistics] = []
     max = 0
+    max_prefix = ""
 
     for prefix, to_sweep_list in to_sweep.items():
         overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
@@ -330,10 +340,77 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
             max = len(overlap_set)
             overlaps = [stats[prefix][id] for id in overlap_set]
             overlaps = sorted(overlaps, key=lambda x: x.id)
+            max_prefix = prefix
 
-    print(overlaps)
+    ###
 
-    pass
+    # if len(overlaps) <= 1:
+    #     print("No overlaps found, trying to combine small MPs")
+
+    #     # Try to combine small MPs
+    #     SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
+    #     for stat in stats.values():
+    #         if stat.filesize < SMALL_CUTOFF:
+    #             overlaps.append(stat)
+    #     overlaps = sorted(overlaps, key=lambda x: x.id)
+
+    if len(overlaps) <= 1:
+        # print("No overlaps found, exiting")
+        return
+
+    # Cap the total filesize of the parquet files
+    # We expect the ram usage of the df to be some
+    # multiple (2-5x?) of the parquet filesize.
+    #
+    # If we want to cap the total ram usage to 512mb,
+    # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
+    # or 512mb / 2 = 256mb
+    max_filesize = 128 * 1024 * 1024  # 128mb
+    total_size = 0
+    early_break = False
+    for i, overlap in enumerate(overlaps):
+        total_size += overlap.filesize
+        if total_size > max_filesize:
+            early_break = True
+            break
+    if not early_break:
+        i = len(overlaps)
+
+    # print(f"Found a total of {len(overlaps)} overlapping MPs")
+    overlaps = overlaps[:i]
+
+    # print(f"Found {len(overlaps)} overlapping MPs")
+
+    # Load each and vstack info a single df
+    df: pl.DataFrame | None = None
+    rows = 0
+    # print("Overlaps", overlaps, len(overlaps))
+    for overlap in overlaps:
+        mp: MicroPartition = mps[max_prefix][overlap.id]
+
+        key = f"{mp.key_prefix or ''}{mp.id}"
+        raw = s3.get_object("bucket", key)
+        if raw is None:
+            raise Exception(f"Micropartition {overlap.id} not found")
+
+        buffer = io.BytesIO(raw)
+        new_df = pl.read_parquet(buffer)
+
+        rows += new_df.height
+        if df is None:
+            df = new_df
+        else:
+            df = df.vstack(new_df)
+    if df is None:
+        raise Exception("No data found")
+
+    # print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+    if df.height != rows:
+        raise Exception("Rows mismatch")
+
+    df = df.sort(table.sort_keys)
+    delete_ids = [overlap.id for overlap in overlaps]
+    delete_and_add(table, s3, metadata, delete_ids, df, key_prefix=max_prefix)
 
 
 def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
@@ -344,7 +421,7 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
 
     stats: dict[int, Statistics] = {}
     mps: dict[int, MicroPartition] = {}
-    print("Loading stats")
+    # print("Loading stats")
     for mp in metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
         mps[mp.id] = mp
@@ -356,19 +433,19 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
                 index = col.index
                 break
 
-    print("Preparing sweep")
+    # print("Preparing sweep")
     to_sweep: list[tuple[str, str, int]] = []
     for stat in stats.values():
         col = stat.columns[index]
         to_sweep.append((col.min, col.max, stat.id))
 
-    print(f"Finding overlap of {len(to_sweep)} MPs")
+    # print(f"Finding overlap of {len(to_sweep)} MPs")
     overlap_set: set[int] = find_ids_with_most_overlap(to_sweep)
     overlaps: list[Statistics] = [stats[id] for id in overlap_set]
     overlaps: list[Statistics] = sorted(overlaps, key=lambda x: x.id)
 
     if len(overlaps) <= 1:
-        print("No overlaps found, trying to combine small MPs")
+        # print("No overlaps found, trying to combine small MPs")
 
         # Try to combine small MPs
         SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
@@ -378,7 +455,7 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
         overlaps = sorted(overlaps, key=lambda x: x.id)
 
     if len(overlaps) <= 0:
-        print("No overlaps found, exiting")
+        # print("No overlaps found, exiting")
         return
 
     # Cap the total filesize of the parquet files
@@ -395,10 +472,10 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
         if total_size > max_filesize:
             break
 
-    print(f"Found a total of {len(overlaps)} overlapping MPs")
+    # print(f"Found a total of {len(overlaps)} overlapping MPs")
     overlaps = overlaps[:i]
 
-    print(f"Found {len(overlaps)} overlapping MPs")
+    # print(f"Found {len(overlaps)} overlapping MPs")
 
     # Load each and vstack info a single df
     df: pl.DataFrame | None = None
@@ -422,7 +499,7 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
     if df is None:
         raise Exception("No data found")
 
-    print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+    # print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
     if df.height != rows:
         raise Exception("Rows mismatch")
 
