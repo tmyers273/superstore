@@ -19,7 +19,7 @@ from classes import Database, Schema, Table
 from metadata import MetadataStore
 from s3 import FakeS3
 from sqlite_metadata import SqliteMetadata
-from tests.run_test import delete, insert, update
+from tests.run_test import cluster, delete, insert, update
 
 
 class DifferentialOp:
@@ -48,6 +48,14 @@ class DeleteOp(DifferentialOp):
 
     def __repr__(self):
         return f"DeleteOp({self.ids})"
+
+
+class ClusterOp(DifferentialOp):
+    def __init__(self):
+        pass
+
+    def __repr__(self):
+        return "ClusterOp"
 
 
 class DifferentialRunner(Protocol):
@@ -95,6 +103,8 @@ class DifferentialRunnerSqlite(DifferentialRunner):
                     for id in op.ids:
                         session.query(self.users).filter(self.users.id == id).delete()
                     session.commit()
+            case ClusterOp():
+                pass
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
@@ -150,6 +160,8 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
             case DeleteOp():
                 # with timer("fake delete op"):
                 delete(self.table, self.s3, self.metadata, op.ids)
+            case ClusterOp():
+                cluster(self.metadata, self.s3, self.table)
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
@@ -222,7 +234,7 @@ class OpGenerator:
     def __init__(self, seed: int = 1):
         self.rng = random.Random(seed)
         self.used_ids = set()
-        self.number_of_ops = 3
+        self.number_of_ops = 4
         self.ops = []
 
     def _op_code(self) -> int:
@@ -290,7 +302,12 @@ class OpGenerator:
 
     def __call__(self) -> Generator[DifferentialOp, None, None]:
         while True:
-            op_code = self._op_code()
+            # If there are no ops, then we need to generate an insert
+            if len(self.ops) == 0:
+                op_code = 0
+            else:
+                op_code = self._op_code()
+
             match op_code:
                 case 0:
                     op = self._gen_insert()
@@ -302,6 +319,10 @@ class OpGenerator:
                     yield op
                 case 2:
                     op = self._gen_delete()
+                    self.ops.append(op)
+                    yield op
+                case 3:
+                    op = ClusterOp()
                     self.ops.append(op)
                     yield op
                 case _:
