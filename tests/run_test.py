@@ -32,6 +32,9 @@ def _build_key(key_values: list[Any], table: Table) -> str:
 def insert(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
+    if table.sort_keys is not None and len(table.sort_keys) > 0:
+        items = items.sort(table.sort_keys)
+
     if table.partition_keys is not None and len(table.partition_keys) > 0:
         parts: list[tuple[str, io.BytesIO]] = []
         res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
@@ -250,6 +253,9 @@ def update(
 
         # Merge the new items
         df = df.vstack(updated_items).unique(subset=["id"], keep="last")
+
+        if table.sort_keys is not None and len(table.sort_keys) > 0:
+            df = df.sort(table.sort_keys)
 
         buffer = io.BytesIO()
         df.write_parquet(buffer)

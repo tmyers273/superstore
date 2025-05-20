@@ -54,7 +54,7 @@ class DifferentialRunner(Protocol):
     def apply(self, op: DifferentialOp):
         raise NotImplementedError
 
-    def check_invariants(self):
+    def check_invariants(self, gen: "OpGenerator"):
         raise NotImplementedError
 
 
@@ -98,7 +98,7 @@ class DifferentialRunnerSqlite(DifferentialRunner):
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
-    def check_invariants(self):
+    def check_invariants(self, gen: "OpGenerator"):
         pass
 
     def all(self) -> list[dict]:
@@ -115,7 +115,10 @@ class DifferentialRunnerSqlite(DifferentialRunner):
 
 class DifferentialRunnerSuperstore(DifferentialRunner):
     def __init__(
-        self, metadata: MetadataStore, partition_keys: list[str] | None = None
+        self,
+        metadata: MetadataStore,
+        partition_keys: list[str] | None = None,
+        sort_keys: list[str] | None = None,
     ):
         self.metadata = metadata
         self.s3 = FakeS3()
@@ -132,6 +135,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                 schema_id=self.schema.id,
                 columns=[],
                 partition_keys=partition_keys,
+                sort_keys=sort_keys,
             )
         )
 
@@ -149,7 +153,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
-    def check_invariants(self):
+    def check_invariants(self, gen: "OpGenerator"):
         # TODO: if there are partition keys, make sure that all the MPs don't violate
         # TODO: if there are partition keys, make sure all the MPs have the correct prefix
         if self.table.partition_keys:
@@ -186,6 +190,24 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                 # should only be one unique tuple in the MP
                 cnt = df.group_by(self.table.partition_keys).n_unique().height
                 assert 1 == cnt, f"Micropartition {key} has duplicate rows\n\n{df}"
+
+        if self.table.sort_keys:
+            for mp in self.metadata.micropartitions(
+                self.table, self.s3, with_data=False
+            ):
+                # Make sure the MP exists in S3
+                key = f"{mp.key_prefix}{mp.id}"
+                raw = self.s3.get_object("bucket", key)
+                assert raw is not None, f"Micropartition {key} not found in s3"
+                part = io.BytesIO(raw)
+                df = pl.read_parquet(part)
+
+                # Make sure the MP is sorted by the sort keys
+                sorted_df = df.sort(self.table.sort_keys)
+                is_sorted = df.equals(sorted_df)
+                assert is_sorted, (
+                    f"Micropartition {key} is not sorted by {self.table.sort_keys}\n\n{df}\n\n{gen.ops}"
+                )
 
     def all(self) -> list[dict]:
         df = self.metadata.all(self.table, self.s3)
@@ -290,7 +312,9 @@ class OpGenerator:
 def test_differential_testing():
     metadata = SqliteMetadata("sqlite:///:memory:")
     sqlite = DifferentialRunnerSqlite()
-    fake = DifferentialRunnerSuperstore(metadata, partition_keys=["account_id"])
+    fake = DifferentialRunnerSuperstore(
+        metadata, partition_keys=["account_id"], sort_keys=["id"]
+    )
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -304,12 +328,12 @@ def test_differential_testing():
         start = perf_counter()
         fake.apply(op)
         fake_apply_times += perf_counter() - start
-        fake.check_invariants()
+        fake.check_invariants(gen)
 
         start = perf_counter()
         sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
-        sqlite.check_invariants()
+        sqlite.check_invariants(gen)
 
         start = perf_counter()
         fake_res = fake.all()

@@ -329,7 +329,7 @@ def test_clustering() -> None:
         if total_size > max_filesize:
             break
 
-    print(f"Found a total of{len(overlaps)} overlapping MPs")
+    print(f"Found a total of {len(overlaps)} overlapping MPs")
     overlaps = overlaps[:i]
 
     print(f"Found {len(overlaps)} overlapping MPs")
