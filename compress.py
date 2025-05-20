@@ -6,7 +6,7 @@ import polars as pl
 
 
 def compress(
-    df: pl.DataFrame, max_file_size: int = 16 * 1024 * 1024, tolerance: float = 0.10
+    df: pl.DataFrame, max_file_size: int = 16 * 1024 * 1024, tolerance: float = 0.20
 ) -> list[io.BytesIO]:
     """
     Splits the given dataframe into one or more parquet files,
@@ -18,7 +18,7 @@ def compress(
 
     Defaults:
     - max_file_size: 16MB
-    - tolerance: 10%, giving a default range of 14.4 to 16MB
+    - tolerance: 20%, giving a default range of 12.8 to 16MB
     """
     parts = []
 

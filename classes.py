@@ -110,6 +110,12 @@ class Statistics(BaseModel):
             columns=cols,
         )
 
+    def get(self, col: str) -> ColumnStatistics | None:
+        for c in self.columns:
+            if c.name == col:
+                return c
+        return None
+
     def dump(self):
         print("Rows: ", self.rows)
         print("Filesize: ", self.filesize)

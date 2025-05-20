@@ -91,6 +91,9 @@ def _insert_batch(
 
 
 def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
+    if len(pks) == 0:
+        return
+
     # TODO: validate schema
     # TODO: error if pk is not found?
 
@@ -99,9 +102,35 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
     # Load the parquet file
     new_mps: list[tuple[str | None, io.BytesIO]] = []
-    old_ids = []
-    for p in metadata_store.micropartitions(table, s3, version=current_version):
-        df = p.dump()
+    old_mp_ids = []
+
+    remaining_pks = set(pks)
+    if len(pks) == 1:
+        min_pk_id = pks[0]
+        max_pk_id = pks[0]
+    else:
+        min_pk_id = min(*pks)
+        max_pk_id = max(*pks)
+
+    for p in metadata_store.micropartitions(
+        table, s3, version=current_version, with_data=False
+    ):
+        stats = p.stats.get("id")
+        if stats is None:
+            raise ValueError(f"Micro partition {p.id} has no id column statistics")
+
+        if not (stats.min <= max_pk_id and stats.max >= min_pk_id):
+            print("Skip via metadta!")
+            continue
+
+        key = f"{p.key_prefix or ''}{p.id}"
+        raw = s3.get_object("bucket", key)
+        if raw is None:
+            raise ValueError(f"Micro partition {p.id} not found")
+        part = io.BytesIO(raw)
+        df = pl.read_parquet(part)
+
+        # df = p.dump()
         before_cnt = len(df)
         df = df.filter(~pl.col("id").is_in(pks))
         after_cnt = len(df)
@@ -110,7 +139,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         if after_cnt == before_cnt:
             continue
 
-        old_ids.append(p.id)
+        old_mp_ids.append(p.id)
         if after_cnt == 0:
             continue
 
@@ -141,7 +170,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
     # Update metadata
     metadata_store.delete_and_add_micro_partitions(
-        table, current_version, old_ids, replacements
+        table, current_version, old_mp_ids, replacements
     )
 
 

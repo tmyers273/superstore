@@ -18,6 +18,7 @@ from classes import Database, Schema, Table
 from metadata import FakeMetadataStore
 from s3 import FakeS3
 from tests.run_test import delete, insert, update
+from util import timer
 
 
 class DifferentialOp:
@@ -132,11 +133,14 @@ class DifferentialRunnerFake(DifferentialRunner):
     def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
-                insert(self.table, self.s3, self.metadata, op.df)
+                with timer("fake insert op"):
+                    insert(self.table, self.s3, self.metadata, op.df)
             case UpdateOp():
-                update(self.table, self.s3, self.metadata, op.df)
+                with timer("fake update op"):
+                    update(self.table, self.s3, self.metadata, op.df)
             case DeleteOp():
-                delete(self.table, self.s3, self.metadata, op.ids)
+                with timer("fake delete op"):
+                    delete(self.table, self.s3, self.metadata, op.ids)
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
@@ -239,6 +243,7 @@ class OpGenerator:
                     raise ValueError(f"Unknown operation: {op_code}")
 
 
+# @pytest.mark.skip(reason="Takes too long to run")
 def test_differential_testing():
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerFake()
@@ -272,5 +277,5 @@ def test_differential_testing():
 
         if i % 100 == 0:
             print(
-                f"Completed {i} ops. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
+                f"Completed {i} ops w/ {len(sqlite_res)} rows and {fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
             )
