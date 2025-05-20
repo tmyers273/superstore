@@ -283,9 +283,10 @@ class FakeMetadataStore(MetadataStore):
         with_data: bool = True,
     ) -> Generator[MicroPartition, None, None]:
         if version is None:
-            micropartitions = self.current_micro_partitions[table.name]
             if table.name not in self.current_micro_partitions:
-                return
+                raise ValueError(f"Table {table.name} has no micro partitions")
+
+            micropartitions = self.current_micro_partitions[table.name]
         else:
             if table.name not in self.ops:
                 raise ValueError(f"Table {table.name} has no archived versions")
