@@ -5,6 +5,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from time import perf_counter
+from typing import Any
 
 import polars as pl
 import pyarrow.dataset as ds
@@ -24,45 +25,64 @@ class Metadata:
     pass
 
 
+def _build_key(key_values: list[Any], table: Table) -> str:
+    return "/".join([f"{k}={v}" for k, v in zip(table.partition_keys, key_values)])
+
+
 def insert(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
-    # TODO: validate schema
+    if table.partition_keys is not None and len(table.partition_keys) > 0:
+        parts: list[tuple[str, io.BytesIO]] = []
+        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
 
+        for k, df in res.items():
+            key = _build_key(k, table)
+            parts.extend([(key, df) for df in compress(df)])
+
+        _insert_batch(table, s3, metadata_store, parts)
+    else:
+        _insert_batch(table, s3, metadata_store, compress(items))
+
+
+def _insert_batch(
+    table: Table,
+    s3: S3Like,
+    metadata_store: MetadataStore,
+    parts: list[io.BytesIO] | list[tuple[str, io.BytesIO]],
+):
     # Get the current table version number
     current_version = metadata_store.get_table_version(table)
 
-    # Build the parquet file
-    buffer = io.BytesIO()
-    items.write_parquet(buffer)
-    buffer.seek(0)
-
-    # Create a new micro partition
-    # print("Compressing...")
-    parts = compress(items)
-    # print(f"Creating micro partitions with {len(parts)} parts...")
     micro_partitions = []
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
 
-    for i, part in enumerate(parts):
+    for i, raw_part in enumerate(parts):
+        if isinstance(raw_part, tuple):
+            key_prefix, part = raw_part
+            key_prefix += "/"
+        else:
+            key_prefix = None
+            part = raw_part
+
         id = reserved_ids[i]
+
         part.seek(0)
         stats = Statistics.from_bytes(part)
         part.seek(0)
 
-        df = pl.read_parquet(io.BytesIO(part.getvalue()))
-        # print(f"# rows for {id}: stats: {stats.rows}, actual: {df.height}")
         stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
             data=None,
             stats=stats,
+            key_prefix=key_prefix,
         )
 
         # Try saving to S3
         part.seek(0)
-        s3.put_object("bucket", str(id), part.getvalue())
+        s3.put_object("bucket", (key_prefix or "") + str(id), part.getvalue())
 
         micro_partitions.append(micro_partition)
 
@@ -78,7 +98,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     current_version = metadata_store.get_table_version(table)
 
     # Load the parquet file
-    new_mps: list[io.BytesIO] = []
+    new_mps: list[tuple[str | None, io.BytesIO]] = []
     old_ids = []
     for p in metadata_store.micropartitions(table, s3, version=current_version):
         df = p.dump()
@@ -96,11 +116,11 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
 
         buffer = io.BytesIO()
         df.write_parquet(buffer)
-        new_mps.append(buffer)
+        new_mps.append((p.key_prefix, buffer))
 
     replacements: list[MicroPartition] = []
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(new_mps))
-    for i, buffer in enumerate(new_mps):
+    for i, (key_prefix, buffer) in enumerate(new_mps):
         # Create a new micro partition
         id = reserved_ids[i]
         stats = Statistics.from_bytes(buffer)
@@ -110,10 +130,12 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
             header=Header(table_id=table.id),
             data=None,
             stats=stats,
+            key_prefix=key_prefix,
         )
+        key = f"{key_prefix or ''}{id}"
 
         # Try saving to S3
-        s3.put_object("bucket", str(id), buffer.getvalue())
+        s3.put_object("bucket", key, buffer.getvalue())
 
         replacements.append(micro_partition)
 
@@ -130,6 +152,13 @@ def delete_and_add(
     delete_ids: list[int],
     new_df: pl.DataFrame,
 ):
+    """
+    Deletes a number of micropartitions and adds a new set of micropartitions.
+    This is generally used for clustering.
+
+    Args:
+    - delete_ids is a list of the micropartition ids to delete.
+    """
     current_version = metadata_store.get_table_version(table)
 
     mps = []
@@ -170,6 +199,7 @@ def update(
 
     # Load the parquet file
     replacements: dict[int, MicroPartition] = {}
+    # TODO: this reserves far too many ids
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
     for p in metadata_store.micropartitions(table, s3, version=current_version):
@@ -198,10 +228,12 @@ def update(
             header=Header(table_id=table.id),
             data=buffer.getvalue(),
             stats=stats,
+            key_prefix=p.key_prefix,
         )
+        key = f"{p.key_prefix or ''}{id}"
 
         # Try saving to S3
-        s3.put_object("bucket", str(id), buffer.getvalue())
+        s3.put_object("bucket", key, buffer.getvalue())
 
         replacements[p.id] = micro_partition
         i += 1

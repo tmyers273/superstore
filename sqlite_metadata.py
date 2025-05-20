@@ -46,6 +46,7 @@ class MicroPartitionMetadata(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
     stats = Column(JSON, nullable=False)
+    key_prefix = Column(String, nullable=True)
 
 
 class Operation(Base):
@@ -116,6 +117,8 @@ class TableModel(Base):
     name = Column(String, nullable=False)
     schema_id = Column(Integer, ForeignKey("schemas.id"), nullable=False)
     database_id = Column(Integer, ForeignKey("databases.id"), nullable=False)
+    partition_keys = Column(JSON, nullable=True)
+    sort_keys = Column(JSON, nullable=True)
 
     __table_args__ = (UniqueConstraint("database_id", "schema_id", "name"),)
 
@@ -126,6 +129,8 @@ class TableModel(Base):
             name=table.name,
             schema_id=table.schema_id,
             database_id=table.database_id,
+            partition_keys=table.partition_keys,
+            sort_keys=table.sort_keys,
         )
 
     def to_table(self) -> Table:
@@ -135,6 +140,8 @@ class TableModel(Base):
             schema_id=self.schema_id,
             database_id=self.database_id,
             columns=[],
+            partition_keys=self.partition_keys,
+            sort_keys=self.sort_keys,
         )
 
 
@@ -269,6 +276,7 @@ class SqliteMetadata(MetadataStore):
                         id=mp.id,
                         table_name=table.name,
                         stats=mp.stats.model_dump(),
+                        key_prefix=mp.key_prefix,
                     )
                     for mp in micro_partitions
                 ]
@@ -342,6 +350,7 @@ class SqliteMetadata(MetadataStore):
                         id=mp.id,
                         table_name=table.name,
                         stats=mp.stats.model_dump(),
+                        key_prefix=mp.key_prefix,
                     )
                     for mp in replacements.values()
                 ]
@@ -427,15 +436,18 @@ class SqliteMetadata(MetadataStore):
             for mp in micro_partitions:
                 micro_partition_raw = None
                 if with_data:
-                    micro_partition_raw = s3.get_object("bucket", str(mp.id))
+                    prefix = mp.key_prefix or ""
+                    key = f"{prefix}{mp.id}"
+                    micro_partition_raw = s3.get_object("bucket", key)
                     if micro_partition_raw is None:
-                        raise ValueError(f"Micro partition `{mp.id}` not found")
+                        raise ValueError(f"Micro partition `{key}` not found")
 
                 yield MicroPartition(
                     id=mp.id,
                     data=micro_partition_raw,
                     stats=Statistics.model_validate(mp.stats),
                     header=Header(table_id=table.id),
+                    key_prefix=mp.key_prefix,
                 )
 
     def delete_and_add_micro_partitions(
@@ -458,6 +470,7 @@ class SqliteMetadata(MetadataStore):
                         id=mp.id,
                         table_name=table.name,
                         stats=mp.stats.model_dump(),
+                        key_prefix=mp.key_prefix,
                     )
                     for mp in new_mps
                 ]

@@ -122,6 +122,7 @@ class MicroPartition(BaseModel):
     header: Header
     data: bytes | None
     stats: Statistics
+    key_prefix: str | None = None
 
     def dump(self) -> pl.DataFrame:
         if self.data is None:

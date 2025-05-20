@@ -241,6 +241,7 @@ class FakeMetadataStore(MetadataStore):
                 "id": micro_partition.id,
                 "header": micro_partition.header,
                 "stats": micro_partition.stats,
+                "key_prefix": micro_partition.key_prefix,
             }
 
         self.table_versions[table.name] = current_version + 1
@@ -283,15 +284,18 @@ class FakeMetadataStore(MetadataStore):
             micropartitions = list(apply(set(), self.ops[table.name][:version]))
         for micro_partition_id in micropartitions:
             metadata = self.raw_micro_partitions[micro_partition_id]
-            micro_partition_raw = s3.get_object("bucket", f"{metadata['id']}")
+            prefix = metadata.get("key_prefix", None) or ""
+            key = f"{prefix}{metadata['id']}"
+            micro_partition_raw = s3.get_object("bucket", key)
             if micro_partition_raw is None:
-                raise ValueError(f"Micro partition `{metadata['id']}` not found")
+                raise ValueError(f"Micro partition `{key}` not found")
 
             yield MicroPartition(
                 id=metadata["id"],
                 header=metadata["header"],
                 data=micro_partition_raw,
                 stats=metadata["stats"],
+                key_prefix=prefix,
             )
 
     def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
@@ -346,6 +350,7 @@ class FakeMetadataStore(MetadataStore):
                 "id": micro_partition.id,
                 "header": micro_partition.header,
                 "stats": micro_partition.stats,
+                "key_prefix": micro_partition.key_prefix,
             }
 
         self.table_versions[table.name] = current_version + 1
@@ -390,6 +395,7 @@ class FakeMetadataStore(MetadataStore):
                 "id": new_mp.id,
                 "header": new_mp.header,
                 "stats": new_mp.stats,
+                "key_prefix": new_mp.key_prefix,
             }
 
         self.table_versions[table.name] = current_version + 1
