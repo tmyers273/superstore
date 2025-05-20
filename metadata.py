@@ -294,13 +294,17 @@ class FakeMetadataStore(MetadataStore):
                 raise ValueError(f"Version {version} not found")
 
             micropartitions = list(apply(set(), self.ops[table.name][:version]))
+
         for micro_partition_id in micropartitions:
             metadata = self.raw_micro_partitions[micro_partition_id]
+
+            micro_partition_raw = None
             prefix = metadata.get("key_prefix", None) or ""
-            key = f"{prefix}{metadata['id']}"
-            micro_partition_raw = s3.get_object("bucket", key)
-            if micro_partition_raw is None:
-                raise ValueError(f"Micro partition `{key}` not found")
+            if with_data == True:
+                key = f"{prefix}{metadata['id']}"
+                micro_partition_raw = s3.get_object("bucket", key)
+                if micro_partition_raw is None:
+                    raise ValueError(f"Micro partition `{key}` not found")
 
             yield MicroPartition(
                 id=metadata["id"],
@@ -398,8 +402,10 @@ class FakeMetadataStore(MetadataStore):
 
         # Replace the micro partitions in metadata
         index = {v: i for i, v in enumerate(self.current_micro_partitions[table.name])}
-        for old_id in delete_ids:
-            del self.current_micro_partitions[table.name][index[old_id]]
+        delete_indexes = [index[old_id] for old_id in delete_ids]
+        delete_indexes.sort(reverse=True)
+        for delete_index in delete_indexes:
+            del self.current_micro_partitions[table.name][delete_index]
 
         for new_mp in new_mps:
             self.current_micro_partitions[table.name].append(new_mp.id)

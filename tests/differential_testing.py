@@ -7,6 +7,7 @@
 # the same operations on both. If there is ever any difference, then we flag that
 # as a bug.
 import random
+from time import perf_counter
 from typing import Generator, Protocol
 
 import polars as pl
@@ -27,15 +28,24 @@ class InsertOp(DifferentialOp):
     def __init__(self, df: pl.DataFrame):
         self.df = df
 
+    def __repr__(self):
+        return f"InsertOp({self.df})"
+
 
 class UpdateOp(DifferentialOp):
     def __init__(self, df: pl.DataFrame):
         self.df = df
 
+    def __repr__(self):
+        return f"UpdateOp({self.df})"
+
 
 class DeleteOp(DifferentialOp):
     def __init__(self, ids: list[int]):
         self.ids = ids
+
+    def __repr__(self):
+        return f"DeleteOp({self.ids})"
 
 
 class DifferentialRunner(Protocol):
@@ -234,13 +244,33 @@ def test_differential_testing():
     fake = DifferentialRunnerFake()
     gen = OpGenerator()
 
-    for _ in range(5_000):
+    fake_apply_times = 0
+    sqlite_apply_times = 0
+    fake_all_times = 0
+    sqlite_all_times = 0
+
+    for i in range(5_000):
         op = next(gen())
 
+        start = perf_counter()
         fake.apply(op)
-        sqlite.apply(op)
+        fake_apply_times += perf_counter() - start
 
+        start = perf_counter()
+        sqlite.apply(op)
+        sqlite_apply_times += perf_counter() - start
+
+        start = perf_counter()
         fake_res = fake.all()
+        fake_all_times += perf_counter() - start
+
+        start = perf_counter()
         sqlite_res = sqlite.all()
+        sqlite_all_times += perf_counter() - start
 
         assert fake_res == sqlite_res
+
+        if i % 100 == 0:
+            print(
+                f"Completed {i} ops. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
+            )
