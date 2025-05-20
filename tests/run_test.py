@@ -286,9 +286,61 @@ def update(
     metadata_store.replace_micro_partitions(table, current_version, replacements)
 
 
+def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
+    if table.sort_keys is None or len(table.sort_keys) == 0:
+        raise ValueError("Table has no sort keys")
+
+    stats: dict[str, dict[int, Statistics]] = {}
+    mps: dict[str, dict[int, MicroPartition]] = {}
+
+    for mp in metadata.micropartitions(table, s3, with_data=False):
+        prefix = mp.key_prefix or ""
+        if prefix not in stats:
+            stats[prefix] = {}
+        if prefix not in mps:
+            mps[prefix] = {}
+        stats[prefix][mp.id] = mp.stats
+        mps[prefix][mp.id] = mp
+
+    col_index = 0
+    for stats_per_key in stats.values():
+        for stat in stats_per_key.values():
+            for col in stat.columns:
+                if col.name == table.sort_keys[0]:
+                    col_index = col.index
+                break
+
+    print("Preparing sweep")
+    to_sweep: dict[str, list[tuple[str, str, int]]] = {}
+    for prefix, stats_per_key in stats.items():
+        for stat in stats_per_key.values():
+            col = stat.columns[col_index]
+            if prefix not in to_sweep:
+                to_sweep[prefix] = []
+            to_sweep[prefix].append((col.min, col.max, stat.id))
+
+    print(f"Finding overlap of {len(to_sweep)} MPs")
+    overlaps: list[Statistics] = []
+    max = 0
+
+    for prefix, to_sweep_list in to_sweep.items():
+        overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
+
+        if len(overlap_set) > max:
+            max = len(overlap_set)
+            overlaps = [stats[prefix][id] for id in overlap_set]
+            overlaps = sorted(overlaps, key=lambda x: x.id)
+
+    print(overlaps)
+
+    pass
+
+
 def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
     if table.sort_keys is None or len(table.sort_keys) == 0:
         raise ValueError("Table has no sort keys")
+    if table.partition_keys is not None and len(table.partition_keys) > 0:
+        return _cluster_with_partitions(metadata, s3, table)
 
     stats: dict[int, Statistics] = {}
     mps: dict[int, MicroPartition] = {}
