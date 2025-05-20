@@ -15,8 +15,8 @@ from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
-from metadata import FakeMetadataStore
 from s3 import FakeS3
+from sqlite_metadata import SqliteMetadata
 from tests.run_test import delete, insert, update
 
 
@@ -112,7 +112,8 @@ class DifferentialRunnerSqlite(DifferentialRunner):
 
 class DifferentialRunnerFake(DifferentialRunner):
     def __init__(self):
-        self.metadata = FakeMetadataStore()
+        # self.metadata = FakeMetadataStore()
+        self.metadata = SqliteMetadata("sqlite:///:memory:")
         self.s3 = FakeS3()
 
         self.db = self.metadata.create_database(Database(id=0, name="test"))
