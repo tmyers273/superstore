@@ -10,7 +10,7 @@ from local_s3 import LocalS3
 from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
 from sweep import find_ids_with_most_overlap
-from tests.run_test import build_table, delete_and_add, insert
+from tests.run_test import build_table, cluster, delete_and_add, insert
 from util import timer
 
 
@@ -67,17 +67,16 @@ def create_table_if_needed(metadata: MetadataStore) -> Table:
         table = get_table()
         table.schema_id = schema.id
         table.database_id = database.id
-        metadata.create_table(table)
-
-    table = get_table()
-    if metadata.get_table(table.name) is None:
-        metadata.create_table(table)
+        table.partition_keys = ["advertiser_id"]
+        table.sort_keys = ["time_window_start"]
+        table = metadata.create_table(table)
 
     return table
 
 
 def cleanup(
-    mp_path: str = "ams_scratch/mps/bucket", db_path: str = "ams_scratch/ams.db"
+    mp_path: str = "ams_scratch/mps/sp-traffic/bucket",
+    db_path: str = "ams_scratch/ams.db",
 ):
     # Delete all *.parquet files in ams_scratch/mps/bucket
     for root, dirs, files in os.walk(mp_path):
@@ -89,7 +88,7 @@ def cleanup(
     os.remove(db_path)
 
 
-@pytest.mark.skip(reason="Skipping ams test")
+# @pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     os.environ["DATA_DIR"] = "ams_scratch"
 
@@ -155,7 +154,7 @@ def test_query_time():
                 GROUP BY date, campaign_id, ad_group_id, ad_id
             """
             )
-            # print(df.explain(verbose=True, analyze=True))
+            print(df.explain(verbose=False))
             df = df.to_polars()
 
         times["certain_advertiser_specific_dates"] = t.duration_ms
@@ -168,6 +167,26 @@ def test_query_time():
         # with open("times.csv", "a") as f:
         #     for query, time in times.items():
         #         f.write(f"{version},{query},{time}\n")
+
+        # With no compaction
+        # 651966 MPs
+        #     Time to get 1755 wanted ids: 2810.659958049655 ms
+        #     Time to create dataset: 23218.510708073154 ms
+        #     Time to register dataset: 3.441500011831522 ms
+        # Done building table: 26562ms
+        # Time to get count: 61519 ms
+        # Time to get counts by advertiser_id: 90711 ms
+        # Time to get sum of clicks, impressions, cost by date: 906 ms
+
+
+def test_clustering3() -> None:
+    os.environ["DATA_DIR"] = "ams_scratch"
+
+    metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
+    table = create_table_if_needed(metadata)
+    s3 = LocalS3("ams_scratch/sp-traffic/mps")
+
+    cluster(metadata, s3, table)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
@@ -367,6 +386,7 @@ def test_clustering() -> None:
 
 @pytest.mark.skip(reason="Skipping ams test")
 def test_ams():
+    os.environ["DATA_DIR"] = "ams_scratch"
     cleanup()
     files = get_parquet_files("./ams")
     print("Found", len(files), "parquet files")
@@ -379,8 +399,9 @@ def test_ams():
     table = get_table()
 
     metadata_store = SqliteMetadata("sqlite:///ams_scratch/ams.db")
-    s3 = LocalS3("ams_scratch/mps")
-    create_table_if_needed(metadata_store)
+    s3 = LocalS3("ams_scratch/sp-traffic/mps")
+    table = create_table_if_needed(metadata_store)
+    print("Table", table)
     # s3 = FakeS3()
 
     for i, file in enumerate(files):
@@ -391,7 +412,7 @@ def test_ams():
             pl.col("time_window_start").str.to_datetime().alias("date").cast(pl.Date)
         )
 
-        # if i > 115:
+        # if i > 10:
         #     break
 
         insert(table, s3, metadata_store, df)
@@ -401,10 +422,10 @@ def test_ams():
     for mp in metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
-    for id, stat in stats.items():
-        print(f"Micropartition {id}:")
-        stat.dump()
-        # break
+    # for id, stat in stats.items():
+    #     print(f"Micropartition {id}:")
+    #     stat.dump()
+    # break
 
     with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()

@@ -1,6 +1,4 @@
 import io
-import json
-from time import perf_counter
 
 import polars as pl
 
@@ -136,36 +134,36 @@ def _compress_part(df: pl.DataFrame, buffer: io.BytesIO | None = None) -> io.Byt
     return buffer
 
 
-def test_compress():
-    items = []
-    for i in range(1_000_000):
-        items.append(
-            {
-                "id": i,
-                "name": f"name_{i}",
-                "email": f"email_{i}@example.com",
-            }
-        )
+# def test_compress():
+#     items = []
+#     for i in range(1_000_000):
+#         items.append(
+#             {
+#                 "id": i,
+#                 "name": f"name_{i}",
+#                 "email": f"email_{i}@example.com",
+#             }
+#         )
 
-    df = pl.DataFrame(items)
+#     df = pl.DataFrame(items)
 
-    json_buf = io.BytesIO()
-    json_buf.write(json.dumps(items).encode())
-    # print(f"\nFull JSON size:   {json_buf.tell() / 1024 / 1024:.2f}MB")
+#     json_buf = io.BytesIO()
+#     json_buf.write(json.dumps(items).encode())
+#     # print(f"\nFull JSON size:   {json_buf.tell() / 1024 / 1024:.2f}MB")
 
-    buf = io.BytesIO()
-    df.write_parquet(buf)
-    # print(f"Full Parquet size: {buf.tell() / 1024 / 1024:.2f}MB")
+#     buf = io.BytesIO()
+#     df.write_parquet(buf)
+#     # print(f"Full Parquet size: {buf.tell() / 1024 / 1024:.2f}MB")
 
-    max_file_size = 200_000
-    start = perf_counter()
-    parts = compress(df, max_file_size)
-    end = perf_counter()
-    # print(
-    #     f"Compressed into {len(parts)} parts, max size {max_file_size} bytes. Took {(end - start) * 1000:.0f}ms"
-    # )
-    # for i, part in enumerate(parts):
-    #     print(f"    Part {i + 1} size: {part.tell()} bytes")
+#     max_file_size = 200_000
+#     start = perf_counter()
+#     parts = compress(df, max_file_size)
+#     end = perf_counter()
+#     # print(
+#     #     f"Compressed into {len(parts)} parts, max size {max_file_size} bytes. Took {(end - start) * 1000:.0f}ms"
+#     # )
+#     # for i, part in enumerate(parts):
+#     #     print(f"    Part {i + 1} size: {part.tell()} bytes")
 
 
-test_compress()
+# test_compress()

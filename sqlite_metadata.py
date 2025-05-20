@@ -8,7 +8,6 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
-    bindparam,
     create_engine,
     select,
     text,
@@ -210,11 +209,11 @@ class SqliteMetadata(MetadataStore):
 
     def create_table(self, table: Table) -> Table:
         with Session(self.engine) as session:
-            table = TableModel.from_table(table)
-            table.id = None
-            session.add(table)
+            table_model = TableModel.from_table(table)
+            table_model.id = None
+            session.add(table_model)
             session.commit()
-            return table.to_table()
+            return table_model.to_table()
 
     def get_stats(
         self, table: Table, s3: S3Like, version: int | None = None
@@ -415,6 +414,10 @@ class SqliteMetadata(MetadataStore):
 
         return apply(set(), ops)
 
+    def chunked(self, items: list, chunk_size: int) -> Generator[list, None, None]:
+        for i in range(0, len(items), chunk_size):
+            yield items[i : i + chunk_size]
+
     def micropartitions(
         self,
         table: Table,
@@ -425,12 +428,23 @@ class SqliteMetadata(MetadataStore):
         ids = self._get_ids(table, version)
 
         with Session(self.engine) as session:
-            # Get current micro partitions
-            stmt = select(MicroPartitionMetadata).where(
-                MicroPartitionMetadata.id.in_(bindparam("ids", expanding=True))
-            )
+            micro_partitions: list[MicroPartitionMetadata] = []
+            print(f"Loading {len(ids)} micro partitions")
 
-            micro_partitions = session.execute(stmt, {"ids": ids}).scalars().all()
+            for id_chunk in self.chunked(list(ids), 1000):
+                chunk_mps = (
+                    session.execute(
+                        select(MicroPartitionMetadata).where(
+                            MicroPartitionMetadata.id.in_(id_chunk)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                micro_partitions.extend(chunk_mps)
+                print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
+
+            print(f"Loaded {len(micro_partitions)} micro partitions")
 
             # Yield micro partitions
             for mp in micro_partitions:

@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any
 
 import polars as pl
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pytest
 from datafusion import SessionContext
@@ -42,6 +43,10 @@ def insert(
 
         for k, df in res.items():
             key = _build_key(k, table)
+            unique = df.n_unique(table.partition_keys)
+            assert unique == 1, (
+                f"key={key} n_unique={unique} partition_keys={table.partition_keys}"
+            )
             parts.extend([(key, df) for df in compress(df)])
 
         _insert_batch(table, s3, metadata_store, parts)
@@ -83,10 +88,19 @@ def _insert_batch(
             stats=stats,
             key_prefix=key_prefix,
         )
+        key = f"{key_prefix or ''}{id}"
+
+        if id == 2:
+            df = (
+                pl.read_parquet(part)
+                .unique(subset=table.partition_keys)
+                .select(table.partition_keys)
+            )
+            part.seek(0)
 
         # Try saving to S3
         part.seek(0)
-        s3.put_object("bucket", (key_prefix or "") + str(id), part.getvalue())
+        s3.put_object("bucket", key, part.getvalue())
 
         micro_partitions.append(micro_partition)
 
@@ -296,13 +310,16 @@ def update(
 
 
 def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
+    version = metadata.get_table_version(table)
+
+    print("Clustering with partitions")
     if table.sort_keys is None or len(table.sort_keys) == 0:
         raise ValueError("Table has no sort keys")
 
     stats: dict[str, dict[int, Statistics]] = {}
     mps: dict[str, dict[int, MicroPartition]] = {}
 
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    for mp in metadata.micropartitions(table, s3, with_data=False, version=version):
         prefix = mp.key_prefix or ""
         if prefix not in stats:
             stats[prefix] = {}
@@ -314,9 +331,9 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
     # First, try to merge small MPs. Tables with partition keys will be more
     # like to have lots of small MPs than other tables.
     SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
-    overlaps: list[Statistics] = []
-    max = 0
-    max_prefix = ""
+    overlap_lists: list[tuple[str, int, list[Statistics]]] = []
+    # max = 0
+    # max_prefix = ""
     for prefix, stats_per_key in stats.items():
         tmp_overlaps: list[Statistics] = []
         tmp_total = 0
@@ -325,114 +342,121 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
                 tmp_overlaps.append(stat)
                 tmp_total += stat.filesize
 
-        if tmp_total > max:
-            max = tmp_total
-            overlaps = tmp_overlaps
-            max_prefix = prefix
-    overlaps = sorted(overlaps, key=lambda x: x.id)
+        overlap_lists.append((prefix, tmp_total, tmp_overlaps))
+    overlap_lists = sorted(overlap_lists, key=lambda x: x[1], reverse=True)
 
-    # If we didn't get one by merging small MPs
-    if max == 0:
-        col_index = 0
-        for stats_per_key in stats.values():
-            for stat in stats_per_key.values():
-                for col in stat.columns:
-                    if col.name == table.sort_keys[0]:
-                        col_index = col.index
-                    break
+    cnt = 0
+    for prefix, total, overlaps in overlap_lists:
+        print(
+            f"Found {len(overlaps)} overlaps for prefix {prefix} with total size {total}"
+        )
 
-        # print("Preparing sweep")
-        to_sweep: dict[str, list[tuple[str, str, int]]] = {}
-        for prefix, stats_per_key in stats.items():
-            for stat in stats_per_key.values():
-                col = stat.columns[col_index]
-                if prefix not in to_sweep:
-                    to_sweep[prefix] = []
-                to_sweep[prefix].append((col.min, col.max, stat.id))
+        # If we didn't get one by merging small MPs
+        # if max == 0:
+        #     col_index = 0
+        #     for stats_per_key in stats.values():
+        #         for stat in stats_per_key.values():
+        #             for col in stat.columns:
+        #                 if col.name == table.sort_keys[0]:
+        #                     col_index = col.index
+        #                 break
 
-        # print(f"Finding overlap of {len(to_sweep)} MPs")
-        overlaps: list[Statistics] = []
-        max = 0
-        max_prefix = ""
+        #     # print("Preparing sweep")
+        #     to_sweep: dict[str, list[tuple[str, str, int]]] = {}
+        #     for prefix, stats_per_key in stats.items():
+        #         for stat in stats_per_key.values():
+        #             col = stat.columns[col_index]
+        #             if prefix not in to_sweep:
+        #                 to_sweep[prefix] = []
+        #             to_sweep[prefix].append((col.min, col.max, stat.id))
 
-        for prefix, to_sweep_list in to_sweep.items():
-            overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
+        #     # print(f"Finding overlap of {len(to_sweep)} MPs")
+        #     overlaps: list[Statistics] = []
+        #     max = 0
+        #     max_prefix = ""
 
-            if len(overlap_set) > max:
-                max = len(overlap_set)
-                overlaps = [stats[prefix][id] for id in overlap_set]
-                overlaps = sorted(overlaps, key=lambda x: x.id)
-                max_prefix = prefix
+        #     for prefix, to_sweep_list in to_sweep.items():
+        #         overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
 
-    ###
+        #         if len(overlap_set) > max:
+        #             max = len(overlap_set)
+        #             overlaps = [stats[prefix][id] for id in overlap_set]
+        #             overlaps = sorted(overlaps, key=lambda x: x.id)
+        #             max_prefix = prefix
 
-    # if len(overlaps) <= 1:
-    #     print("No overlaps found, trying to combine small MPs")
+        ###
 
-    #     # Try to combine small MPs
-    #     SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
-    #     for stat in stats.values():
-    #         if stat.filesize < SMALL_CUTOFF:
-    #             overlaps.append(stat)
-    #     overlaps = sorted(overlaps, key=lambda x: x.id)
+        # if len(overlaps) <= 1:
+        #     print("No overlaps found, trying to combine small MPs")
 
-    if len(overlaps) <= 1:
-        # print("No overlaps found, exiting")
-        return
+        #     # Try to combine small MPs
+        #     SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
+        #     for stat in stats.values():
+        #         if stat.filesize < SMALL_CUTOFF:
+        #             overlaps.append(stat)
+        #     overlaps = sorted(overlaps, key=lambda x: x.id)
 
-    # Cap the total filesize of the parquet files
-    # We expect the ram usage of the df to be some
-    # multiple (2-5x?) of the parquet filesize.
-    #
-    # If we want to cap the total ram usage to 512mb,
-    # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
-    # or 512mb / 2 = 256mb
-    max_filesize = 128 * 1024 * 1024  # 128mb
-    total_size = 0
-    early_break = False
-    for i, overlap in enumerate(overlaps):
-        total_size += overlap.filesize
-        if total_size > max_filesize:
-            early_break = True
-            break
-    if not early_break:
-        i = len(overlaps)
+        if len(overlaps) <= 1:
+            print("No overlaps found, exiting")
+            return
 
-    # print(f"Found a total of {len(overlaps)} overlapping MPs")
-    overlaps = overlaps[:i]
+        # Cap the total filesize of the parquet files
+        # We expect the ram usage of the df to be some
+        # multiple (2-5x?) of the parquet filesize.
+        #
+        # If we want to cap the total ram usage to 512mb,
+        # then we can cap the total parquet filesize to 512mb / 5 = ~100mb
+        # or 512mb / 2 = 256mb
+        max_filesize = 128 * 1024 * 1024  # 128mb
+        total_size = 0
+        early_break = False
+        for i, overlap in enumerate(overlaps):
+            total_size += overlap.filesize
+            if total_size > max_filesize:
+                early_break = True
+                break
+        if not early_break:
+            i = len(overlaps)
 
-    # print(f"Found {len(overlaps)} overlapping MPs")
+        print(f"Found a total of {len(overlaps)} overlapping MPs")
+        overlaps = overlaps[:i]
 
-    # Load each and vstack info a single df
-    df: pl.DataFrame | None = None
-    rows = 0
-    # print("Overlaps", overlaps, len(overlaps))
-    for overlap in overlaps:
-        mp: MicroPartition = mps[max_prefix][overlap.id]
+        print(f"Found {len(overlaps)} overlapping MPs")
 
-        key = f"{mp.key_prefix or ''}{mp.id}"
-        raw = s3.get_object("bucket", key)
-        if raw is None:
-            raise Exception(f"Micropartition {overlap.id} not found")
+        # Load each and vstack info a single df
+        df: pl.DataFrame | None = None
+        rows = 0
+        # print("Overlaps", overlaps, len(overlaps))
+        for overlap in overlaps:
+            mp: MicroPartition = mps[prefix][overlap.id]
 
-        buffer = io.BytesIO(raw)
-        new_df = pl.read_parquet(buffer)
+            key = f"{mp.key_prefix or ''}{mp.id}"
+            raw = s3.get_object("bucket", key)
+            if raw is None:
+                raise Exception(f"Micropartition {overlap.id} not found")
 
-        rows += new_df.height
+            buffer = io.BytesIO(raw)
+            new_df = pl.read_parquet(buffer)
+
+            rows += new_df.height
+            if df is None:
+                df = new_df
+            else:
+                df = df.vstack(new_df)
         if df is None:
-            df = new_df
-        else:
-            df = df.vstack(new_df)
-    if df is None:
-        raise Exception("No data found")
+            raise Exception("No data found")
 
-    # print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
-    if df.height != rows:
-        raise Exception("Rows mismatch")
+        print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+        if df.height != rows:
+            raise Exception("Rows mismatch")
 
-    df = df.sort(table.sort_keys)
-    delete_ids = [overlap.id for overlap in overlaps]
-    delete_and_add(table, s3, metadata, delete_ids, df, key_prefix=max_prefix)
+        df = df.sort(table.sort_keys)
+        delete_ids = [overlap.id for overlap in overlaps]
+        delete_and_add(table, s3, metadata, delete_ids, df, key_prefix=prefix)
+
+        cnt += 1
+        if cnt > 500:
+            break
 
 
 def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
@@ -573,13 +597,27 @@ def build_table(
             if data_dir is None:
                 raise ValueError("DATA_DIR is not set")
             base_dir = os.path.join(data_dir, table.name, "mps/bucket")
-            # if table_name == "sp-traffic":
-            #     base_dir = "ams_scratch/mps/bucket"
-            # else:
-            #     base_dir = "scratch/audit_log_items/mps/bucket"
-            paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+
+            paths = []
+            for root, _, files in os.walk(base_dir):
+                for file in files:
+                    if file.endswith(".parquet"):
+                        paths.append(os.path.join(root, file))
+
+            # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
             s = perf_counter()
-            dataset = ds.dataset(paths, format="parquet")
+            # dataset = ds.dataset(
+            #     paths,
+            #     format="parquet",  # partitioning=table.partition_keys
+            # )
+            dataset = ds.dataset(
+                paths,
+                format="parquet",
+                partitioning=ds.partitioning(
+                    pa.schema([pa.field("advertiser_id", pa.large_string())]),
+                    flavor="hive",
+                ),
+            )
             e = perf_counter()
             print(f"    Time to create dataset: {(e - s) * 1000} ms")
             s = perf_counter()
@@ -602,13 +640,14 @@ def build_table(
     #     # p.dump().write_parquet(path)
     #     wanted_ids.append(p.id)
 
-    # base_dir = "ams_scratch/mps/bucket"
-    # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
-    # dataset = ds.dataset(paths, format="parquet")
-    # ctx.register_dataset(table_name, dataset)
 
-    # # ctx.register_parquet(table_name, tmpdir)
-    # yield ctx
+# base_dir = "ams_scratch/mps/bucket"
+# paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
+# dataset = ds.dataset(paths, format="parquet")
+# ctx.register_dataset(table_name, dataset)
+
+# # ctx.register_parquet(table_name, tmpdir)
+# yield ctx
 
 
 def simple_insert(metadata_store: MetadataStore, s3: S3Like):
