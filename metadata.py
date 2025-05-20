@@ -142,6 +142,17 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
+    def micropartition_count(
+        self, table: Table, s3: S3Like, version: int | None = None
+    ) -> int:
+        """
+        Returns the number of micropartitions for a table at a given version.
+        """
+        cnt = 0
+        for _ in self.micropartitions(table, s3, version):
+            cnt += 1
+        return cnt
+
 
 class FakeMetadataStore(MetadataStore):
     def __init__(self) -> None:

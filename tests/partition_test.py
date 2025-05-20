@@ -33,12 +33,8 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
 
     insert(table, s3, metadata, df)
 
-    cnt = 0
-    for mp in metadata.micropartitions(table, s3):
-        cnt += 1
-
     # Expect 3 MPs, one for each unique user_id
-    assert cnt == 3
+    assert metadata.micropartition_count(table, s3) == 3
 
     # Expect objects to be at "user_id=1/1"
     assert s3.get_object("bucket", "user_id=1/1") is not None
@@ -56,13 +52,8 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     )
     update(table, s3, metadata, df)
 
-    cnt = 0
-    for mp in metadata.micropartitions(table, s3):
-        print(mp.id, mp.key_prefix)
-        cnt += 1
-
     # Expect 3 MPs, one for each unique user_id
-    assert cnt == 3
+    assert metadata.micropartition_count(table, s3) == 3
 
     # Expect objects to be at "user_id=1/1"
     assert s3.get_object("bucket", "user_id=1/1") is not None
@@ -72,12 +63,8 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # Delete an item from a MP that has multiple items
     delete(table, s3, metadata, [4])
 
-    cnt = 0
-    for mp in metadata.micropartitions(table, s3):
-        cnt += 1
-
     # Expect 3 MPs, one for each unique user_id
-    assert cnt == 3
+    assert metadata.micropartition_count(table, s3) == 3
 
     assert s3.get_object("bucket", "user_id=1/1") is not None
     assert s3.get_object("bucket", "user_id=2/2") is not None
@@ -87,11 +74,7 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # itself to be deleted
     delete(table, s3, metadata, [3])
 
-    cnt = 0
-    for mp in metadata.micropartitions(table, s3):
-        cnt += 1
-
-    assert cnt == 2
+    assert metadata.micropartition_count(table, s3) == 2
 
     assert s3.get_object("bucket", "user_id=1/1") is not None
     assert s3.get_object("bucket", "user_id=2/2") is not None
