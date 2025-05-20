@@ -311,36 +311,58 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
         stats[prefix][mp.id] = mp.stats
         mps[prefix][mp.id] = mp
 
-    col_index = 0
-    for stats_per_key in stats.values():
-        for stat in stats_per_key.values():
-            for col in stat.columns:
-                if col.name == table.sort_keys[0]:
-                    col_index = col.index
-                break
-
-    # print("Preparing sweep")
-    to_sweep: dict[str, list[tuple[str, str, int]]] = {}
-    for prefix, stats_per_key in stats.items():
-        for stat in stats_per_key.values():
-            col = stat.columns[col_index]
-            if prefix not in to_sweep:
-                to_sweep[prefix] = []
-            to_sweep[prefix].append((col.min, col.max, stat.id))
-
-    # print(f"Finding overlap of {len(to_sweep)} MPs")
+    # First, try to merge small MPs
+    # Try to combine small MPs
+    SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
     overlaps: list[Statistics] = []
     max = 0
     max_prefix = ""
+    for prefix, stats_per_key in stats.items():
+        tmp_overlaps: list[Statistics] = []
+        tmp_total = 0
+        for stat in stats_per_key.values():
+            if stat.filesize < SMALL_CUTOFF:
+                tmp_overlaps.append(stat)
+                tmp_total += stat.filesize
 
-    for prefix, to_sweep_list in to_sweep.items():
-        overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
-
-        if len(overlap_set) > max:
-            max = len(overlap_set)
-            overlaps = [stats[prefix][id] for id in overlap_set]
-            overlaps = sorted(overlaps, key=lambda x: x.id)
+        if tmp_total > max:
+            max = tmp_total
+            overlaps = tmp_overlaps
             max_prefix = prefix
+    overlaps = sorted(overlaps, key=lambda x: x.id)
+
+    # If we didn't get one by merging small MPs
+    if max == 0:
+        col_index = 0
+        for stats_per_key in stats.values():
+            for stat in stats_per_key.values():
+                for col in stat.columns:
+                    if col.name == table.sort_keys[0]:
+                        col_index = col.index
+                    break
+
+        # print("Preparing sweep")
+        to_sweep: dict[str, list[tuple[str, str, int]]] = {}
+        for prefix, stats_per_key in stats.items():
+            for stat in stats_per_key.values():
+                col = stat.columns[col_index]
+                if prefix not in to_sweep:
+                    to_sweep[prefix] = []
+                to_sweep[prefix].append((col.min, col.max, stat.id))
+
+        # print(f"Finding overlap of {len(to_sweep)} MPs")
+        overlaps: list[Statistics] = []
+        max = 0
+        max_prefix = ""
+
+        for prefix, to_sweep_list in to_sweep.items():
+            overlap_set: set[int] = find_ids_with_most_overlap(to_sweep_list)
+
+            if len(overlap_set) > max:
+                max = len(overlap_set)
+                overlaps = [stats[prefix][id] for id in overlap_set]
+                overlaps = sorted(overlaps, key=lambda x: x.id)
+                max_prefix = prefix
 
     ###
 
