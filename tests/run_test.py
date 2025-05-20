@@ -311,8 +311,8 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
         stats[prefix][mp.id] = mp.stats
         mps[prefix][mp.id] = mp
 
-    # First, try to merge small MPs
-    # Try to combine small MPs
+    # First, try to merge small MPs. Tables with partition keys will be more
+    # like to have lots of small MPs than other tables.
     SMALL_CUTOFF = 8 * 1024 * 1024  # 8mb
     overlaps: list[Statistics] = []
     max = 0
