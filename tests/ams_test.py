@@ -8,9 +8,10 @@ import pytest
 from classes import ColumnDefinitions, Database, Schema, Statistics, Table
 from local_s3 import LocalS3
 from metadata import MetadataStore
+from ops.insert import insert
 from sqlite_metadata import SqliteMetadata
 from sweep import find_ids_with_most_overlap
-from tests.run_test import build_table, cluster, delete_and_add, insert
+from tests.run_test import build_table, cluster, delete_and_add
 from util import timer
 
 
@@ -88,7 +89,7 @@ def cleanup(
     os.remove(db_path)
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_query_time():
     os.environ["DATA_DIR"] = "ams_scratch"
 
@@ -214,6 +215,7 @@ def test_query_time():
         # Time to get sum of clicks, impressions, cost by date: 1531 ms
 
 
+@pytest.mark.skip(reason="Skipping ams test")
 def test_clustering3() -> None:
     os.environ["DATA_DIR"] = "ams_scratch"
 

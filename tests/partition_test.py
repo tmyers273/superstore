@@ -2,9 +2,10 @@ import polars as pl
 
 from classes import Database, Schema, Table
 from metadata import FakeMetadataStore, MetadataStore
+from ops.insert import insert
 from s3 import FakeS3, S3Like
 from sqlite_metadata import SqliteMetadata
-from tests.run_test import delete, insert, update
+from tests.run_test import delete, update
 
 
 def check_partition_keys(metadata: MetadataStore, s3: S3Like):

@@ -443,9 +443,9 @@ class SqliteMetadata(MetadataStore):
                     q = q.where(MicroPartitionMetadata.key_prefix == prefix)
                 chunk_mps = session.execute(q).scalars().all()
                 micro_partitions.extend(chunk_mps)
-                print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
+                # print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
 
-            print(f"Loaded {len(micro_partitions)} micro partitions")
+            # print(f"Loaded {len(micro_partitions)} micro partitions")
 
             # Yield micro partitions
             for mp in micro_partitions:

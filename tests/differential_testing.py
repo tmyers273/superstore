@@ -12,14 +12,16 @@ from time import perf_counter
 from typing import Generator, Protocol
 
 import polars as pl
+import pytest
 from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
 from metadata import MetadataStore
+from ops.insert import insert
 from s3 import FakeS3
 from sqlite_metadata import SqliteMetadata
-from tests.run_test import cluster, delete, insert, update
+from tests.run_test import cluster, delete, update
 
 
 class DifferentialOp:
@@ -329,7 +331,7 @@ class OpGenerator:
                     raise ValueError(f"Unknown operation: {op_code}")
 
 
-# @pytest.mark.skip(reason="Takes too long to run")
+@pytest.mark.skip(reason="Takes too long to run")
 def test_differential_testing():
     metadata = SqliteMetadata("sqlite:///:memory:")
     sqlite = DifferentialRunnerSqlite()

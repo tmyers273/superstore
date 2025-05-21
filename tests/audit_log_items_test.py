@@ -7,9 +7,10 @@ import pytest
 from classes import ColumnDefinitions, Database, Schema, Table
 from local_s3 import LocalS3
 from metadata import MetadataStore
+from ops.insert import insert
 from sqlite_metadata import SqliteMetadata
 from tests.ams_test import cleanup, get_parquet_files
-from tests.run_test import build_table, insert
+from tests.run_test import build_table
 from util import timer
 
 
