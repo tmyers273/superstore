@@ -433,7 +433,7 @@ class SqliteMetadata(MetadataStore):
 
         with Session(self.engine) as session:
             micro_partitions: list[MicroPartitionMetadata] = []
-            print(f"Loading {len(ids)} micro partitions")
+            # print(f"Loading {len(ids)} micro partitions")
 
             for id_chunk in self.chunked(list(ids), 1000):
                 q = select(MicroPartitionMetadata).where(

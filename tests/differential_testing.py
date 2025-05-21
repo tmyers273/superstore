@@ -17,7 +17,7 @@ from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
-from metadata import MetadataStore
+from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
 from s3 import FakeS3
 from sqlite_metadata import SqliteMetadata
@@ -346,6 +346,48 @@ def test_differential_testing():
     sqlite_all_times = 0
 
     for i in range(5_000):
+        op = next(gen())
+
+        start = perf_counter()
+        fake.apply(op)
+        fake_apply_times += perf_counter() - start
+        fake.check_invariants(gen)
+
+        start = perf_counter()
+        sqlite.apply(op)
+        sqlite_apply_times += perf_counter() - start
+        sqlite.check_invariants(gen)
+
+        start = perf_counter()
+        fake_res = fake.all()
+        fake_all_times += perf_counter() - start
+
+        start = perf_counter()
+        sqlite_res = sqlite.all()
+        sqlite_all_times += perf_counter() - start
+
+        assert fake_res == sqlite_res
+
+        if i % 100 == 0:
+            print(
+                f"Completed {i} ops w/ {len(sqlite_res)} rows and {fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
+            )
+
+
+def test_differential_testing_small():
+    metadata = FakeMetadataStore()
+    sqlite = DifferentialRunnerSqlite()
+    fake = DifferentialRunnerSuperstore(
+        metadata, partition_keys=["account_id"], sort_keys=["id"]
+    )
+    gen = OpGenerator()
+
+    fake_apply_times = 0
+    sqlite_apply_times = 0
+    fake_all_times = 0
+    sqlite_all_times = 0
+
+    for i in range(10):
         op = next(gen())
 
         start = perf_counter()
