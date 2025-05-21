@@ -103,15 +103,39 @@ def test_query_time():
     found = 0
     search = "ENTITY2IMWE41VQFHYI"
     included_ids = []
-    for mp in metadata.micropartitions(table, s3):
-        # stats = mp.statistics()
-        for col in mp.stats.columns:
-            if col.name == "advertiser_id":
-                cnt += 1
-                if search >= col.min and search <= col.max:
-                    found += 1
-                    included_ids.append(mp.id)
-                    # print(f"{search} found in {mp.id}: {col.min} - {col.max}")
+    paths = []
+    data_dir = os.getenv("DATA_DIR")
+    for mp in metadata.micropartitions(
+        table, s3, with_data=False, prefix=f"advertiser_id={search}"
+    ):
+        cnt += 1
+
+        advertiser_id = mp.stats.get("advertiser_id")
+        if advertiser_id is None:
+            continue
+
+        time_window_start = mp.stats.get("time_window_start")
+        if time_window_start is None:
+            continue
+
+        if (
+            search >= advertiser_id.min
+            and search <= advertiser_id.max
+            and "2025-05-01 00:00" >= time_window_start.min
+            and "2025-05-04 00:00" < time_window_start.max
+        ):
+            found += 1
+            included_ids.append(mp.id)
+            paths.append(
+                os.path.join(
+                    data_dir,
+                    table.name,
+                    "mps",
+                    "bucket",
+                    mp.key_prefix or "",
+                    f"{mp.id}.parquet",
+                )
+            )
 
     print(f"{search} found in {found}/{cnt} MPs")
 
@@ -123,25 +147,26 @@ def test_query_time():
         s3,
         table_name="sp-traffic",
         with_data=False,
-        included_mp_ids=set(included_ids),
+        # included_mp_ids=set(included_ids),
+        paths=paths,
     ) as ctx:
-        print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
-        with timer("Time to get count") as t:
-            df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
-            df = df.to_polars()
-        times["total_count"] = t.duration_ms
-        print(df)
+        # print(f"Done building table: {(perf_counter() - start) * 1000:.0f}ms")
+        # with timer("Time to get count") as t:
+        #     df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
+        #     df = df.to_polars()
+        # times["total_count"] = t.duration_ms
+        # print(df)
 
-        with timer("Time to get counts by advertiser_id") as t:
-            df = ctx.sql(
-                "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
-            )
-            df = df.to_polars()
-        times["count_by_advertiser"] = t.duration_ms
-        print(df)
+        # with timer("Time to get counts by advertiser_id") as t:
+        #     df = ctx.sql(
+        #         "SELECT advertiser_id, count(*) as cnt FROM 'sp-traffic' GROUP BY advertiser_id ORDER BY cnt DESC"
+        #     )
+        #     df = df.to_polars()
+        # times["count_by_advertiser"] = t.duration_ms
+        # print(df)
 
         with timer("Time to get sum of clicks, impressions, cost by date") as t:
-            df = ctx.sql(
+            out = ctx.sql(
                 """
                 SELECT cast(campaign_id as bigint) as campaign_id, cast(ad_group_id as bigint) as ad_group_id, cast(ad_id as bigint) as ad_id, sum(clicks), sum(impressions), sum(cost), date
                 FROM 'sp-traffic' 
@@ -150,12 +175,12 @@ def test_query_time():
                     (time_window_start >= '2025-05-01 00:00' and time_window_start < '2025-05-02 00:00') or 
                     (time_window_start >= '2025-05-02 00:00' and time_window_start < '2025-05-03 00:00') or 
                     (time_window_start >= '2025-05-03 00:00' and time_window_start < '2025-05-04 00:00') 
-                )
+                ) 
                 GROUP BY date, campaign_id, ad_group_id, ad_id
             """
             )
-            print(df.explain(verbose=False))
-            df = df.to_polars()
+            df = out.to_polars()
+        print(out.explain(verbose=False))
 
         times["certain_advertiser_specific_dates"] = t.duration_ms
 
@@ -177,6 +202,16 @@ def test_query_time():
         # Time to get count: 61519 ms
         # Time to get counts by advertiser_id: 90711 ms
         # Time to get sum of clicks, impressions, cost by date: 906 ms
+        #
+        # Partitoned by advertiser_id, then compacted
+        # 21906 MPs
+        #     Time to get 63 wanted ids: 4570.850042044185 ms
+        #     Time to create dataset: 27384.887292049825 ms
+        #     Time to register dataset: 3.147540963254869 ms
+        # Done building table: 32423ms
+        # Time to get count: 56705 ms
+        # Time to get counts by advertiser_id: 88207 ms
+        # Time to get sum of clicks, impressions, cost by date: 1531 ms
 
 
 def test_clustering3() -> None:

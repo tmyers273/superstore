@@ -563,6 +563,7 @@ def build_table(
     table_name: str = "users",
     with_data: bool = True,
     included_mp_ids: set[int] | None = None,
+    paths: list[str] | None = None,
 ):
     ctx = SessionContext()
 
@@ -581,28 +582,34 @@ def build_table(
                 ctx.register_dataset(table_name, dataset)
                 yield ctx
         case LocalS3():
-            wanted_ids = []
-            s = perf_counter()
+            if paths is None:
+                wanted_ids = []
+                s = perf_counter()
 
-            ids = metadata_store._get_ids(table, version)
-            for id in ids:
-                if included_mp_ids is not None and id not in included_mp_ids:
-                    continue
-                wanted_ids.append(id)
+                if included_mp_ids is None:
+                    ids = metadata_store._get_ids(table, version)
+                    for id in ids:
+                        if included_mp_ids is not None and id not in included_mp_ids:
+                            continue
+                        wanted_ids.append(id)
+                else:
+                    wanted_ids = list(included_mp_ids)
 
-            e = perf_counter()
-            print(f"    Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms")
+                e = perf_counter()
+                print(
+                    f"    Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms"
+                )
 
-            data_dir = os.getenv("DATA_DIR")
-            if data_dir is None:
-                raise ValueError("DATA_DIR is not set")
-            base_dir = os.path.join(data_dir, table.name, "mps/bucket")
+                data_dir = os.getenv("DATA_DIR")
+                if data_dir is None:
+                    raise ValueError("DATA_DIR is not set")
+                base_dir = os.path.join(data_dir, table.name, "mps/bucket")
 
-            paths = []
-            for root, _, files in os.walk(base_dir):
-                for file in files:
-                    if file.endswith(".parquet"):
-                        paths.append(os.path.join(root, file))
+                paths = []
+                for root, _, files in os.walk(base_dir):
+                    for file in files:
+                        if file.endswith(".parquet"):
+                            paths.append(os.path.join(root, file))
 
             # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
             s = perf_counter()

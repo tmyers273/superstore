@@ -424,23 +424,24 @@ class SqliteMetadata(MetadataStore):
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
+        prefix: str | None = None,
     ) -> Generator[MicroPartition, None, None]:
         ids = self._get_ids(table, version)
+
+        if prefix is not None and not prefix.endswith("/"):
+            prefix = f"{prefix}/"
 
         with Session(self.engine) as session:
             micro_partitions: list[MicroPartitionMetadata] = []
             print(f"Loading {len(ids)} micro partitions")
 
             for id_chunk in self.chunked(list(ids), 1000):
-                chunk_mps = (
-                    session.execute(
-                        select(MicroPartitionMetadata).where(
-                            MicroPartitionMetadata.id.in_(id_chunk)
-                        )
-                    )
-                    .scalars()
-                    .all()
+                q = select(MicroPartitionMetadata).where(
+                    MicroPartitionMetadata.id.in_(id_chunk)
                 )
+                if prefix is not None:
+                    q = q.where(MicroPartitionMetadata.key_prefix == prefix)
+                chunk_mps = session.execute(q).scalars().all()
                 micro_partitions.extend(chunk_mps)
                 print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
 
