@@ -144,8 +144,104 @@ class PartitionedNewFilesInsertStrategy(InsertStrategy):
         self._insert_batch(table, s3, metadata_store, parts)
 
 
+class PartitionedAppendInsertStrategy(InsertStrategy):
+    def insert(
+        self,
+        table: Table,
+        s3: S3Like,
+        metadata_store: MetadataStore,
+        items: pl.DataFrame,
+    ):
+        if table.partition_keys is None or len(table.partition_keys) == 0:
+            raise ValueError(f"Table `{table.name}` has no partition keys")
+
+        # Get the current table version number
+        current_version = metadata_store.get_table_version(table)
+
+        """A list of (prefix, parquet file) tuples"""
+        parts: list[tuple[str, io.BytesIO]] = []
+
+        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
+
+        # Get the most recent MPs for each partition key
+        keys = [_build_key(k, table) for k in res.keys()]
+        latest_mps: dict[str, MicroPartition] = {}
+        for mp in metadata_store.micropartitions(
+            table, s3, current_version, with_data=False
+        ):
+            if mp.key_prefix is None:
+                raise ValueError(
+                    f"Micropartition `{mp.id}` has no key prefix in a partitioned table"
+                )
+
+            curr = latest_mps.get(mp.key_prefix)
+            if curr is None:
+                latest_mps[mp.key_prefix] = mp
+            elif curr.id < mp.id:
+                latest_mps[mp.key_prefix] = mp
+
+        old_mp_ids: set[int] = set()
+        for k, new_df in res.items():
+            key = _build_key(k, table) + "/"
+            unique = new_df.n_unique(table.partition_keys)
+            assert unique == 1, (
+                f"key={key} n_unique={unique} partition_keys={table.partition_keys}"
+            )
+
+            # Load the current MP, if it exists
+            mp = latest_mps.get(key)
+            if mp is None:
+                # print(f"[key={key}] Could not find latest MP for key", key)
+                if table.sort_keys is not None and len(table.sort_keys) > 0:
+                    new_df = new_df.sort(table.sort_keys)
+
+                parts.extend([(key, new_df) for new_df in compress(new_df)])
+            else:
+                old_mp_ids.add(mp.id)
+                # print(f"[key={key}] Append to {mp.id} for key_prefix={key}")
+                existing_raw = s3.get_object("bucket", f"{mp.key_prefix or ''}{mp.id}")
+                if existing_raw is None:
+                    raise ValueError(f"Micropartition `{mp.id}` not found")
+
+                existing_df = pl.read_parquet(existing_raw)
+                df = existing_df.vstack(new_df)
+                if table.sort_keys is not None and len(table.sort_keys) > 0:
+                    df = df.sort(table.sort_keys)
+
+                # print(
+                #     f"[key={key}] Existing has {existing_df.height} rows, new has {new_df.height}, total has {df.height}"
+                # )
+                # TODO: if unique keys, maybe filter here?
+                parts.extend([(key, df) for df in compress(df)])
+
+        reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
+        new_mps: list[MicroPartition] = []
+        for i, (key_prefix, part) in enumerate(parts):
+            part.seek(0)
+            id = reserved_ids[i]
+            stats = Statistics.from_bytes(part)
+            stats.id = id
+            micro_partition = MicroPartition(
+                id=id,
+                header=Header(table_id=table.id),
+                data=None,
+                stats=stats,
+                key_prefix=key_prefix,
+            )
+            key = f"{key_prefix}{id}"
+
+            s3.put_object("bucket", key, part.getvalue())
+            # print(f"[key={key}] Saved to {key} w/ {key_prefix}")
+            new_mps.append(micro_partition)
+
+        metadata_store.delete_and_add_micro_partitions(
+            table, current_version, list(old_mp_ids), new_mps
+        )
+
+
 def _insert_strategy(table: Table) -> InsertStrategy:
     if table.partition_keys is None or len(table.partition_keys) == 0:
         return UnpartitionedInsertStrategy()
 
-    return PartitionedNewFilesInsertStrategy()
+    # return PartitionedNewFilesInsertStrategy()
+    return PartitionedAppendInsertStrategy()

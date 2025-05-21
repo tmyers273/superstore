@@ -231,7 +231,7 @@ def update(
 def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
     version = metadata.get_table_version(table)
 
-    print("Clustering with partitions")
+    # print("Clustering with partitions")
     if table.sort_keys is None or len(table.sort_keys) == 0:
         raise ValueError("Table has no sort keys")
 
@@ -266,9 +266,9 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
 
     cnt = 0
     for prefix, total, overlaps in overlap_lists:
-        print(
-            f"Found {len(overlaps)} overlaps for prefix {prefix} with total size {total}"
-        )
+        # print(
+        #     f"Found {len(overlaps)} overlaps for prefix {prefix} with total size {total}"
+        # )
 
         # If we didn't get one by merging small MPs
         # if max == 0:
@@ -316,7 +316,7 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
         #     overlaps = sorted(overlaps, key=lambda x: x.id)
 
         if len(overlaps) <= 1:
-            print("No overlaps found, exiting")
+            # print("No overlaps found, exiting")
             return
 
         # Cap the total filesize of the parquet files
@@ -337,10 +337,10 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
         if not early_break:
             i = len(overlaps)
 
-        print(f"Found a total of {len(overlaps)} overlapping MPs")
+        # print(f"Found a total of {len(overlaps)} overlapping MPs")
         overlaps = overlaps[:i]
 
-        print(f"Found {len(overlaps)} overlapping MPs")
+        # print(f"Found {len(overlaps)} overlapping MPs")
 
         # Load each and vstack info a single df
         df: pl.DataFrame | None = None
@@ -365,7 +365,7 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
         if df is None:
             raise Exception("No data found")
 
-        print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+        # print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
         if df.height != rows:
             raise Exception("Rows mismatch")
 

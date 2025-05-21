@@ -346,13 +346,13 @@ def test_clustering() -> None:
                 index = col.index
                 break
 
-    print("Preparing sweep")
+    # print("Preparing sweep")
     to_sweep: list[tuple[str, str, int]] = []
     for stat in stats.values():
         col = stat.columns[index]
         to_sweep.append((col.min, col.max, stat.id))
 
-    print(f"Finding overlap of {len(to_sweep)} MPs")
+    # print(f"Finding overlap of {len(to_sweep)} MPs")
     overlap_set: set[int] = find_ids_with_most_overlap(to_sweep)
     overlaps: list[Statistics] = [stats[id] for id in overlap_set]
     overlaps = sorted(overlaps, key=lambda x: x.id)
@@ -385,10 +385,10 @@ def test_clustering() -> None:
         if total_size > max_filesize:
             break
 
-    print(f"Found a total of {len(overlaps)} overlapping MPs")
+    # print(f"Found a total of {len(overlaps)} overlapping MPs")
     overlaps = overlaps[:i]
 
-    print(f"Found {len(overlaps)} overlapping MPs")
+    # print(f"Found {len(overlaps)} overlapping MPs")
 
     # Load each and vstack info a single df
     df: pl.DataFrame | None = None
@@ -412,7 +412,7 @@ def test_clustering() -> None:
     if df is None:
         raise Exception("No data found")
 
-    print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
+    # print(f"Loaded a total of {rows} rows. New df has {df.height} rows")
     if df.height != rows:
         raise Exception("Rows mismatch")
 

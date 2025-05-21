@@ -289,7 +289,7 @@ class FakeMetadataStore(MetadataStore):
             micropartitions = self.current_micro_partitions[table.name]
         else:
             if table.name not in self.ops:
-                raise ValueError(f"Table {table.name} has no archived versions")
+                return
             if len(self.ops[table.name]) < version:
                 raise ValueError(f"Version {version} not found")
 
@@ -392,7 +392,7 @@ class FakeMetadataStore(MetadataStore):
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:
-            raise ValueError(f"Table {table.name} has no micro partitions")
+            self.current_micro_partitions[table.name] = []
 
         # Make sure all the ids exist
         current_ids = {p for p in self.current_micro_partitions[table.name]}
@@ -419,4 +419,7 @@ class FakeMetadataStore(MetadataStore):
         self.table_versions[table.name] = current_version + 1
 
         new_mp_ids = [p.id for p in new_mps]
+
+        if table.name not in self.ops:
+            self.ops[table.name] = []
         self.ops[table.name].append(SetOpDeleteAndAdd((delete_ids, new_mp_ids)))

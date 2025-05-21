@@ -182,7 +182,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                 parts = mp.key_prefix.split("/")[:-1]
                 parts = [part.split("=")[0] for part in parts]
                 assert parts == self.table.partition_keys, (
-                    f"Micropartition {mp.id} has incorrect key prefix: {mp.key_prefix}"
+                    f"Micropartition {mp.id} has incorrect key prefix: {mp.key_prefix}\nActual:   {parts}\nExpected: {self.table.partition_keys}"
                 )
 
                 # Make sure the MP exists in S3
@@ -374,8 +374,7 @@ def test_differential_testing():
             )
 
 
-def test_differential_testing_small():
-    metadata = FakeMetadataStore()
+def check_differential_small(metadata: MetadataStore):
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerSuperstore(
         metadata, partition_keys=["account_id"], sort_keys=["id"]
@@ -408,9 +407,21 @@ def test_differential_testing_small():
         sqlite_res = sqlite.all()
         sqlite_all_times += perf_counter() - start
 
-        assert fake_res == sqlite_res
+        assert fake_res == sqlite_res, (
+            f"Actual:\n{fake_res}\nExpected:\n{sqlite_res}\n\n{gen.ops}"
+        )
 
         if i % 100 == 0:
             print(
                 f"Completed {i} ops w/ {len(sqlite_res)} rows and {fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
             )
+
+
+def test_differential_testing_small_fake():
+    metadata = FakeMetadataStore()
+    check_differential_small(metadata)
+
+
+def test_differential_testing_small_sqlite():
+    metadata = SqliteMetadata("sqlite:///:memory:")
+    check_differential_small(metadata)
