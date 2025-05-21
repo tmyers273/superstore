@@ -421,7 +421,7 @@ def test_clustering() -> None:
     delete_and_add(table, s3, metadata, delete_ids, df)
 
 
-@pytest.mark.skip(reason="Skipping ams test")
+# @pytest.mark.skip(reason="Skipping ams test")
 def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
     cleanup()
@@ -441,7 +441,11 @@ def test_ams():
     print("Table", table)
     # s3 = FakeS3()
 
+    total_start = perf_counter()
+    total_dur = 0
+    total_count = 0
     for i, file in enumerate(files):
+        s = perf_counter()
         print(f"Processing {file} ({i + 1}/{len(files)})")
         df = pl.read_parquet(file)
 
@@ -449,11 +453,19 @@ def test_ams():
             pl.col("time_window_start").str.to_datetime().alias("date").cast(pl.Date)
         )
 
-        # if i > 10:
-        #     break
+        if i > 10:
+            break
 
         insert(table, s3, metadata_store, df)
-        print(f"    Inserted {df.height} rows")
+
+        dur = perf_counter() - s
+        total_count += df.height
+        total_dur += dur
+        rate = df.height / dur / 1000
+        total_rate = total_count / total_dur / 1000
+        print(
+            f"    Inserted {df.height} rows at {rate:.2f}k rows/s (total rate: {total_rate:.2f}k rows/s)"
+        )
 
     stats = {}
     for mp in metadata_store.micropartitions(table, s3):

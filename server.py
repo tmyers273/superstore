@@ -3,6 +3,7 @@ import math
 import os
 import re
 import shutil
+from time import perf_counter
 
 import polars as pl
 import uvicorn
@@ -25,7 +26,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174"],
+    allow_origins=["http://localhost:5174", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,9 +38,10 @@ app.add_middleware(
 # table_name = "sp-traffic"
 
 data_dir = os.getenv("DATA_DIR")
-db_path = f"sqlite:///{data_dir}/db.db"
-s3_path = f"{data_dir}/audit_log_items/mps"
-table_name = "audit_log_items"
+db_path = f"sqlite:///{data_dir}/ams.db"
+# db_path = f"sqlite:///{data_dir}/db.db"
+s3_path = f"{data_dir}/sp-traffic/mps"
+table_name = "sp-traffic"
 print(f"data_dir: {data_dir}")
 print(f"S3 Path: {s3_path}")
 
@@ -236,6 +238,7 @@ class ExecuteRequest(BaseModel):
 
 @app.post("/execute")
 async def execute(request: ExecuteRequest):
+    s = perf_counter()
     table = metadata.get_table(request.table_name)
     if table is None:
         return {"error": "Table not found"}
@@ -243,21 +246,32 @@ async def execute(request: ExecuteRequest):
     with build_table(
         table, metadata, s3, table_name=request.table_name, with_data=False
     ) as ctx:
-        total = ctx.sql(request.query).to_polars()
-        total = list(total.to_dicts()[0].values())[0]
+        results = ctx.sql(request.query).to_polars()
+        # total = list(total.to_dicts()[0].values())[0]
+        # print("TOTAL", total)
 
         skip = (request.page - 1) * request.per_page
-        out = total.slice(skip, request.per_page).to_dicts()
+        out = results.slice(skip, request.per_page).to_dicts()
+
+    dur = perf_counter() - s
 
     return {
-        "data": out,
-        "total": total,
+        "data": {
+            "rows": out,
+            "columns": results.columns,
+            "query": request.query,
+        },
+        "total": results.height,
         "page": request.page,
         "per_page": request.per_page,
-        "current_page": request.page,
         "from": skip + 1,
         "to": skip + request.per_page,
-        "last_page": math.ceil(total / request.per_page),
+        "last_page": math.ceil(results.height / request.per_page),
+        "stats": {
+            "execution_time": dur,
+            "rows_processed": 0,
+            "bytes_scanned": 0,
+        },
     }
 
 

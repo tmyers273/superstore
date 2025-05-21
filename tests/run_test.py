@@ -530,12 +530,7 @@ def build_table(
                         if file.endswith(".parquet"):
                             paths.append(os.path.join(root, file))
 
-            # paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
             s = perf_counter()
-            # dataset = ds.dataset(
-            #     paths,
-            #     format="parquet",  # partitioning=table.partition_keys
-            # )
             dataset = ds.dataset(
                 paths,
                 format="parquet",
