@@ -18,4 +18,6 @@ dependencies = [
     "seaborn>=0.13.2",
     "notebook>=7.4.2",
     "python-dotenv>=1.1.0",
+    "fastapi-users[sqlalchemy]>=14.0.1",
+    "aiosqlite>=0.21.0",
 ]

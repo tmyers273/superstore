@@ -3,6 +3,7 @@ import math
 import os
 import re
 import shutil
+from contextlib import asynccontextmanager
 from time import perf_counter
 
 import polars as pl
@@ -11,17 +12,46 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from classes import ColumnDefinitions, Database, Schema, Table
+from create_user import create_user
+from db import Base, User, engine
 from local_s3 import LocalS3
 from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
 from tests.ams_test import get_parquet_files
 from tests.audit_log_items_test import create_table_if_needed, get_table
 from tests.run_test import build_table, insert
+from users import auth_backend, fastapi_users
+from util import env
+
+
+async def create_db_and_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+        r = await conn.execute(select(User).where(User.email == "tmyers273@gmail.com"))
+        if r.fetchall():
+            print("User already exists")
+        else:
+            print("User does not exist, creating user")
+            await create_user("tmyers273@gmail.com", env("USER_PASSWORD"))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await create_db_and_tables()
+    yield
+
 
 load_dotenv()
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
+
+app.include_router(
+    fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]
+)
+
 
 # Add CORS middleware
 app.add_middleware(

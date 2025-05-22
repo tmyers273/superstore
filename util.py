@@ -1,3 +1,4 @@
+import os
 from time import perf_counter
 
 
@@ -14,3 +15,14 @@ class timer:
         e = perf_counter()
         self.duration_ms = int(round((e - self.s) * 1000, 0))
         print(f"{self.msg or 'Time taken'}: {self.duration_ms} ms")
+
+
+def env(key: str) -> str:
+    """
+    Keys the specified key from the env, throwing an exception
+    if it does not exist.
+    """
+    val = os.getenv(key)
+    if val is None:
+        raise Exception(f"Env variable `{key}` is not set")
+    return val
