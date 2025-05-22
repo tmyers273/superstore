@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, declarative_base
 from classes import Database, Header, MicroPartition, Schema, Statistics, Table
 from metadata import MetadataStore
 from s3 import S3Like
-from set_ops import (
+from set.set_ops import (
     SetOp,
     SetOpAdd,
     SetOpDelete,

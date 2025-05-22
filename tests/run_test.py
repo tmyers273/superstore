@@ -18,7 +18,7 @@ from local_s3 import LocalS3
 from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
 from s3 import FakeS3, S3Like
-from set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
+from set.set_ops import SetOpAdd, SetOpDeleteAndAdd, SetOpReplace
 from sqlite_metadata import SqliteMetadata
 from sweep import find_ids_with_most_overlap
 

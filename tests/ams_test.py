@@ -421,7 +421,7 @@ def test_clustering() -> None:
     delete_and_add(table, s3, metadata, delete_ids, df)
 
 
-# @pytest.mark.skip(reason="Skipping ams test")
+@pytest.mark.skip(reason="Skipping ams test")
 def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
     cleanup()

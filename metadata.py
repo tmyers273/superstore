@@ -4,7 +4,7 @@ import polars as pl
 
 from classes import Database, MicroPartition, Schema, Table
 from s3 import S3Like
-from set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
+from set.set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):
