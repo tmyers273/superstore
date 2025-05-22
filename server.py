@@ -9,7 +9,7 @@ from time import perf_counter
 import polars as pl
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -23,7 +23,7 @@ from sqlite_metadata import SqliteMetadata
 from tests.ams_test import get_parquet_files
 from tests.audit_log_items_test import create_table_if_needed, get_table
 from tests.run_test import build_table, insert
-from users import auth_backend, fastapi_users
+from users import auth_backend, current_active_user, fastapi_users
 from util import env
 
 
@@ -32,8 +32,10 @@ async def create_db_and_tables():
         await conn.run_sync(Base.metadata.create_all)
 
         r = await conn.execute(select(User).where(User.email == "tmyers273@gmail.com"))
-        if r.fetchall():
+        user = r.fetchall()
+        if user:
             print("User already exists")
+            print(user)
         else:
             print("User does not exist, creating user")
             await create_user("tmyers273@gmail.com", env("USER_PASSWORD"))
@@ -89,6 +91,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+@app.get("/auth/me")
+async def authenticated_route(user: User = Depends(current_active_user)):
+    user.name = "Demo User"
+    return user
+
+
 @app.post("/auth/login")
 async def login(request: LoginRequest):
     print(request)
@@ -113,6 +121,7 @@ async def table(
     pageSize: int = 30,
     sortColumn: str = "id",
     sortDirection: str = "asc",
+    user: User = Depends(current_active_user),
 ):
     print(metadata.get_tables())
     table = metadata.get_table(table_name)
@@ -267,7 +276,7 @@ class ExecuteRequest(BaseModel):
 
 
 @app.post("/execute")
-async def execute(request: ExecuteRequest):
+async def execute(request: ExecuteRequest, user: User = Depends(current_active_user)):
     s = perf_counter()
     table = metadata.get_table(request.table_name)
     if table is None:
@@ -350,7 +359,7 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
 
 
 @app.get("/databases")
-async def databases():
+async def databases(user: User = Depends(current_active_user)):
     databases = metadata.get_databases()
     schemas = metadata.get_schemas()
     tables = metadata.get_tables()
