@@ -71,7 +71,7 @@ app.add_middleware(
 # table_name = "sp-traffic"
 
 data_dir = os.getenv("DATA_DIR")
-db_path = f"sqlite:///{data_dir}/ams.db"
+db_path = f"sqlite:///{data_dir}/db.db"
 # db_path = f"sqlite:///{data_dir}/db.db"
 s3_path = f"{data_dir}/audit_log_items/mps"
 table_name = "audit_log_items"
