@@ -23,9 +23,9 @@ def check_version_repository(repo: VersionRepository):
     )
 
     for version, op in enumerate(ops):
-        repo.add(table, version, op)
+        repo.add(table, version, op, None)
         expected = apply(expected, op)
-        assert repo.get_hams(table, version) == expected
+        assert repo.get_hams(table, version, None) == expected
 
 
 def test_fake_version_repository():

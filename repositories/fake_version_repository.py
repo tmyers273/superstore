@@ -4,7 +4,7 @@ from set.set_ops import SetOp, apply
 from .version_repository import VersionRepository
 
 
-class FakeVersionRepository(VersionRepository):
+class FakeVersionRepository(VersionRepository[None]):
     """
     In-memory implementation of VersionRepository for testing purposes.
 
@@ -18,7 +18,7 @@ class FakeVersionRepository(VersionRepository):
         self.ops: dict[str, list[SetOp]] = {}
         self.checkpoints: dict[str, list[tuple[int, set[int]]]] = {}
 
-    def add(self, table: Table, version: int, op: SetOp):
+    def add(self, table: Table, version: int, op: SetOp, session: None):
         if table.name not in self.ops:
             self.ops[table.name] = []
         self.ops[table.name].append(op)
@@ -26,8 +26,8 @@ class FakeVersionRepository(VersionRepository):
         if version % self.CHECKPOINT_FREQUENCY == 0:
             self._checkpoint(table, version)
 
-    def _checkpoint(self, table: Table, version: int):
-        hams = self.get_hams(table, version)
+    def _checkpoint(self, table: Table, version: int, session: None):
+        hams = self.get_hams(table, version, None)
         if table.name not in self.checkpoints:
             self.checkpoints[table.name] = []
         self.checkpoints[table.name].append((version, hams))
@@ -47,7 +47,7 @@ class FakeVersionRepository(VersionRepository):
 
         return None
 
-    def get_hams(self, table: Table, version: int) -> set[int]:
+    def get_hams(self, table: Table, version: int, session: None) -> set[int]:
         if table.name not in self.ops:
             return set()
 

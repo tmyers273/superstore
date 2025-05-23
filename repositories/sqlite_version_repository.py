@@ -1,41 +1,39 @@
 from typing import Any
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from classes import Table
-from db import Base, Operation, OperationSnapshot
+from db import Operation, OperationSnapshot
 from set.set_ops import SetOp, apply
 
 from .version_repository import VersionRepository
 
 
-class SqliteVersionRepository(VersionRepository):
+class SqliteVersionRepository(VersionRepository[Session]):
     CHECKPOINT_FREQUENCY = 1024
 
-    def __init__(self, connection_string: str):
-        self.engine = create_engine(connection_string)
-        Base.metadata.create_all(self.engine)
+    def __init__(self, engine: Engine):
+        self.engine = engine
 
-    def add(self, table: Table, version: int, op: SetOp):
-        with Session(self.engine) as session:
-            # Convert SetOp to operation data
-            operation_type, data = self._set_op_to_operation_data(op)
+    def add(self, table: Table, version: int, op: SetOp, session: Session) -> None:
+        # Convert SetOp to operation data
+        operation_type, data = self._set_op_to_operation_data(op)
 
-            # Create operation record
-            operation = Operation(
-                table_name=table.name,
-                version=version,
-                operation_type=operation_type,
-                data=data,
-            )
-            session.add(operation)
+        # Create operation record
+        operation = Operation(
+            table_name=table.name,
+            version=version,
+            operation_type=operation_type,
+            data=data,
+        )
+        session.add(operation)
 
-            # Create checkpoint if needed
-            if version % self.CHECKPOINT_FREQUENCY == 0:
-                self._checkpoint(session, table, version)
+        # Create checkpoint if needed
+        if version % self.CHECKPOINT_FREQUENCY == 0:
+            self._checkpoint(session, table, version)
 
-            session.commit()
+        # Don't commit here - let the parent session handle it
 
     def get_hams(self, table: Table, version: int) -> set[int]:
         with Session(self.engine) as session:

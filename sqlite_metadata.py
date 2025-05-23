@@ -21,9 +21,14 @@ from db import (
     TableVersion,
 )
 from metadata import MetadataStore
+from repositories.sqlite_version_repository import SqliteVersionRepository
+from repositories.version_repository import VersionRepository
 from s3 import S3Like
 from set.set_ops import (
     SetOp,
+    SetOpAdd,
+    SetOpDeleteAndAdd,
+    SetOpReplace,
     apply,
 )
 
@@ -31,6 +36,9 @@ from set.set_ops import (
 class SqliteMetadata(MetadataStore):
     def __init__(self, connection_string: str):
         self.engine = create_engine(connection_string)
+        self.version_repo: VersionRepository[Session] = SqliteVersionRepository(
+            self.engine
+        )
         Base.metadata.create_all(self.engine)
 
     def get_databases(self) -> list[Database]:
@@ -71,11 +79,11 @@ class SqliteMetadata(MetadataStore):
 
     def create_schema(self, schema: Schema) -> Schema:
         with Session(self.engine) as session:
-            schema = SchemaModel.from_schema(schema)
-            schema.id = None
-            session.add(schema)
+            schema_model = SchemaModel.from_schema(schema)
+            schema_model.id = None
+            session.add(schema_model)
             session.commit()
-            return schema.to_schema()
+            return schema_model.to_schema()
 
     def get_tables(self) -> list[Table]:
         with Session(self.engine) as session:
@@ -166,18 +174,19 @@ class SqliteMetadata(MetadataStore):
             )
 
             # Add operation
-            operation = Operation(
-                table_name=table.name,
-                version=current_version + 1,
-                operation_type="add",
-                data=[mp.id for mp in micro_partitions],
-            )
-            session.add(operation)
+            op = SetOpAdd([mp.id for mp in micro_partitions])
+            print(f"Adding operation: at version {current_version + 1}: {op}")
+            self.version_repo.add(table, current_version + 1, op, session)
 
             # Update table version
             self._bump_table_version(session, table, current_version)
 
             session.commit()
+
+            # Load all ops from the db
+            q = select(Operation)
+            r = session.execute(q).fetchall()
+            print("Ops result", r)
 
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
@@ -239,14 +248,9 @@ class SqliteMetadata(MetadataStore):
                 ]
             )
 
-            # Add operation
-            operation = Operation(
-                table_name=table.name,
-                version=current_version + 1,
-                operation_type="replace",
-                data=[(old_id, mp.id) for old_id, mp in replacements.items()],
-            )
-            session.add(operation)
+            # Add operation using version repository
+            op = SetOpReplace([(old_id, mp.id) for old_id, mp in replacements.items()])
+            self.version_repo.add(table, current_version + 1, op, session)
 
             # Update table version
             self._bump_table_version(session, table, current_version)
@@ -375,14 +379,9 @@ class SqliteMetadata(MetadataStore):
                 ]
             )
 
-            # Add operation
-            operation = Operation(
-                table_name=table.name,
-                version=current_version + 1,
-                operation_type="delete_and_add",
-                data=(delete_ids, [mp.id for mp in new_mps]),
-            )
-            session.add(operation)
+            # Add operation using version repository
+            op = SetOpDeleteAndAdd((delete_ids, [mp.id for mp in new_mps]))
+            self.version_repo.add(table, current_version + 1, op, session)
 
             # Update table version
             self._bump_table_version(session, table, current_version)
