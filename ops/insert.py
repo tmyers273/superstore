@@ -248,6 +248,77 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         return parts, old_mp_ids
 
+    def _save_single_part(
+        self,
+        table: Table,
+        s3: S3Like,
+        part_data: tuple[int, str, pl.DataFrame, io.BytesIO],
+    ) -> MicroPartition:
+        """Save a single part to S3 and create a MicroPartition object."""
+        id, key_prefix, df_part, part = part_data
+
+        parquet_buffer = part.getvalue()
+        stats = Statistics.from_df(df_part)
+        stats.filesize = len(parquet_buffer)
+        stats.id = id
+
+        micro_partition = MicroPartition(
+            id=id,
+            header=Header(table_id=table.id),
+            data=None,
+            stats=stats,
+            key_prefix=key_prefix,
+        )
+        key = f"{key_prefix}{id}"
+
+        s3.put_object("bucket", key, parquet_buffer)
+        return micro_partition
+
+    def _save_parts_to_s3_and_create_micropartitions(
+        self,
+        table: Table,
+        s3: S3Like,
+        metadata_store: MetadataStore,
+        parts: list[tuple[str, pl.DataFrame, io.BytesIO]],
+    ) -> list[MicroPartition]:
+        """Save parts to S3 and create MicroPartition objects using parallel processing."""
+        reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
+        s3_save_start = perf_counter()
+
+        # Prepare data for parallel processing
+        part_data_list = [
+            (reserved_ids[i], key_prefix, df_part, part)
+            for i, (key_prefix, df_part, part) in enumerate(parts)
+        ]
+
+        new_mps: list[MicroPartition] = []
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all part saving tasks
+            future_to_index = {
+                executor.submit(self._save_single_part, table, s3, part_data): i
+                for i, part_data in enumerate(part_data_list)
+            }
+
+            # Collect results as they complete, maintaining order
+            results: list[MicroPartition | None] = [None] * len(parts)
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    micro_partition = future.result()
+                    results[index] = micro_partition
+                except Exception as exc:
+                    print(f"Part {index} generated an exception: {exc}")
+                    raise
+
+            # Add results in order (filter out None values, though there shouldn't be any)
+            new_mps.extend([mp for mp in results if mp is not None])
+
+        s3_save_dur = perf_counter() - s3_save_start
+        print(f"S3 save time: {s3_save_dur:.2f} seconds")
+
+        return new_mps
+
     def insert(
         self,
         table: Table,
@@ -272,37 +343,17 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         # Generate replacements in parallel
         parts, old_mp_ids = self._generate_replacements(table, s3, res, latest_mps)
 
-        reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
-        new_mps: list[MicroPartition] = []
-        s3_save_start = perf_counter()
-        for i, (key_prefix, df_part, part) in enumerate(parts):
-            id = reserved_ids[i]
-            parquet_buffer = part.getvalue()
-            stats = Statistics.from_df(df_part)
-            stats.filesize = len(parquet_buffer)
-            stats.id = id
-            micro_partition = MicroPartition(
-                id=id,
-                header=Header(table_id=table.id),
-                data=None,
-                stats=stats,
-                key_prefix=key_prefix,
-            )
-            key = f"{key_prefix}{id}"
-
-            s3.put_object("bucket", key, parquet_buffer)
-            new_mps.append(micro_partition)
-
-        s3_save_dur = perf_counter() - s3_save_start
+        # Save parts to S3 and create MicroPartitions
+        new_mps = self._save_parts_to_s3_and_create_micropartitions(
+            table, s3, metadata_store, parts
+        )
 
         metadata_store.delete_and_add_micro_partitions(
             table, current_version, list(old_mp_ids), new_mps
         )
 
         total_dur = perf_counter() - start
-        print(
-            f"Inserted {items.height} rows in {total_dur:.2f} seconds (s3 save: {s3_save_dur:.2f} seconds)"
-        )
+        print(f"Inserted {items.height} rows in {total_dur:.2f} seconds")
 
 
 def _insert_strategy(table: Table) -> InsertStrategy:
