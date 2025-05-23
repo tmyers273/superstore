@@ -142,26 +142,13 @@ class PartitionedNewFilesInsertStrategy(InsertStrategy):
 
 
 class PartitionedAppendInsertStrategy(InsertStrategy):
-    def insert(
+    def _get_most_recent_mps(
         self,
         table: Table,
         s3: S3Like,
         metadata_store: MetadataStore,
-        items: pl.DataFrame,
-    ):
-        start = perf_counter()
-        if table.partition_keys is None or len(table.partition_keys) == 0:
-            raise ValueError(f"Table `{table.name}` has no partition keys")
-
-        # Get the current table version number
-        current_version = metadata_store.get_table_version(table)
-
-        """A list of (prefix, parquet file) tuples"""
-        parts: list[tuple[str, io.BytesIO]] = []
-
-        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
-
-        # Get the most recent MPs for each partition key
+        current_version: int,
+    ) -> dict[str, MicroPartition]:
         recent_start = perf_counter()
         latest_mps: dict[str, MicroPartition] = {}
         for mp in metadata_store.micropartitions(
@@ -179,6 +166,31 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 latest_mps[mp.key_prefix] = mp
         recent_dur = perf_counter() - recent_start
         print(f"Time to get most recent MPs: {recent_dur:.2f} seconds")
+        return latest_mps
+
+    def insert(
+        self,
+        table: Table,
+        s3: S3Like,
+        metadata_store: MetadataStore,
+        items: pl.DataFrame,
+    ):
+        start = perf_counter()
+        if table.partition_keys is None or len(table.partition_keys) == 0:
+            raise ValueError(f"Table `{table.name}` has no partition keys")
+
+        # Get the current table version number
+        current_version = metadata_store.get_table_version(table)
+
+        """A list of (prefix, parquet file) tuples"""
+        parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
+
+        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
+
+        # Get the most recent MPs for each partition key
+        latest_mps = self._get_most_recent_mps(
+            table, s3, metadata_store, current_version
+        )
 
         replacement_start = perf_counter()
         old_mp_ids: set[int] = set()
@@ -196,7 +208,9 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 if table.sort_keys is not None and len(table.sort_keys) > 0:
                     new_df = new_df.sort(table.sort_keys)
 
-                parts.extend([(key, new_df) for new_df in compress(new_df)])
+                parts.extend(
+                    [(key, df_part, part) for (df_part, part) in compress(new_df)]
+                )
             else:
                 old_mp_ids.add(mp.id)
                 # print(f"[key={key}] Append to {mp.id} for key_prefix={key}")
@@ -213,14 +227,14 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 #     f"[key={key}] Existing has {existing_df.height} rows, new has {new_df.height}, total has {df.height}"
                 # )
                 # TODO: if unique keys, maybe filter here?
-                parts.extend([(key, df) for df in compress(df)])
+                parts.extend([(key, df_part, part) for (df_part, part) in compress(df)])
         replacement_dur = perf_counter() - replacement_start
         print(f"Time to get replacements: {replacement_dur:.2f} seconds")
 
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
         new_mps: list[MicroPartition] = []
         s3_save_start = perf_counter()
-        for i, (key_prefix, (df_part, part)) in enumerate(parts):
+        for i, (key_prefix, df_part, part) in enumerate(parts):
             id = reserved_ids[i]
             parquet_buffer = part.getvalue()
             stats = Statistics.from_df(df_part)
