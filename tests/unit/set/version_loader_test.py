@@ -2,6 +2,7 @@ from typing import Protocol
 
 from classes import Table
 from set.set_ops import SetOp, apply
+from sqlite_version_repository import SqliteVersionRepository
 from tests.set_ops_test import generate_random_ops
 
 
@@ -92,3 +93,9 @@ def check_version_repository(repo: VersionRepository):
 
 def test_fake_version_repository():
     check_version_repository(FakeVersionRepository())
+
+
+def test_sqlite_version_repository():
+    # Use in-memory SQLite database for testing
+    repo = SqliteVersionRepository("sqlite:///:memory:")
+    check_version_repository(repo)
