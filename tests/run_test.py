@@ -12,7 +12,15 @@ import pyarrow.dataset as ds
 import pytest
 from datafusion import SessionContext
 
-from classes import ColumnDefinitions, Header, MicroPartition, Statistics, Table
+from classes import (
+    ColumnDefinitions,
+    Database,
+    Header,
+    MicroPartition,
+    Schema,
+    Statistics,
+    Table,
+)
 from compress import compress
 from local_s3 import LocalS3
 from metadata import FakeMetadataStore, MetadataStore
@@ -861,3 +869,117 @@ def test_stress():
 
         print(df)
         assert df.to_dicts()[0]["clicks"] == sum(i["clicks"] for i in items)
+
+
+def test_build_table_only_includes_active_micropartitions():
+    """
+    Test that build_table only includes active micropartitions and ignores
+    old/deleted micropartition files that remain on disk.
+
+    This test reproduces the bug where build_table was including ALL parquet
+    files in the directory instead of only the active ones tracked by metadata.
+    """
+    import tempfile
+
+    # Use a temporary directory for this test
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Set up environment
+        os.environ["DATA_DIR"] = temp_dir
+
+        # Create the directory structure
+        table_dir = os.path.join(temp_dir, "test-table", "mps", "bucket")
+        os.makedirs(table_dir, exist_ok=True)
+
+        # Use LocalS3 and SqliteMetadata
+        metadata_store = SqliteMetadata(f"sqlite:///{temp_dir}/test.db")
+        s3 = LocalS3(f"{temp_dir}/test-table/mps")
+
+        # Create the database and schema in metadata
+        database = metadata_store.create_database(Database(id=0, name="test_db"))
+        schema = metadata_store.create_schema(
+            Schema(id=0, name="default", database_id=database.id)
+        )
+
+        # Create test table
+        table = Table(
+            id=0,
+            schema_id=schema.id,
+            database_id=database.id,
+            name="test-table",
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="name", type="String"),
+                ColumnDefinitions(name="partition_key", type="String"),
+            ],
+            partition_keys=[
+                "partition_key"
+            ],  # Use partitioning to trigger append strategy
+            sort_keys=["id"],
+        )
+        table = metadata_store.create_table(table)
+
+        # Insert initial data - all in same partition to trigger replacement
+        initial_data = pl.DataFrame(
+            [
+                {"id": 1, "name": "Alice", "partition_key": "A"},
+                {"id": 2, "name": "Bob", "partition_key": "A"},
+            ]
+        )
+        insert(table, s3, metadata_store, initial_data)
+
+        # Verify initial state
+        with build_table(table, metadata_store, s3, table_name="test-table") as ctx:
+            result = ctx.sql("SELECT COUNT(*) as count FROM 'test-table'").to_polars()
+            initial_count = result.to_dicts()[0]["count"]
+            assert initial_count == 2, f"Expected 2 rows initially, got {initial_count}"
+
+        # Insert more data in the SAME partition - this will trigger replacement
+        # of the old micropartition, leaving the old file on disk but inactive
+        additional_data = pl.DataFrame(
+            [
+                {"id": 3, "name": "Charlie", "partition_key": "A"},
+                {"id": 4, "name": "David", "partition_key": "A"},
+            ]
+        )
+        insert(table, s3, metadata_store, additional_data)
+
+        # At this point, we should have old micropartition files on disk
+        # but only the new/active ones should be included in queries
+
+        # Count all parquet files on disk
+        all_files = []
+        for root, _, files in os.walk(table_dir):
+            for file in files:
+                if file.endswith(".parquet"):
+                    all_files.append(file)
+
+        # Get active micropartition IDs from metadata
+        active_ids = metadata_store._get_ids(table)
+
+        # Verify we have more files on disk than active micropartitions
+        # (this confirms old files are still on disk)
+        assert len(all_files) > len(active_ids), (
+            f"Expected more files on disk ({len(all_files)}) than active MPs ({len(active_ids)}). "
+            "This suggests the test setup didn't create the expected scenario."
+        )
+
+        # The key test: build_table should only return data from active micropartitions
+        with build_table(table, metadata_store, s3, table_name="test-table") as ctx:
+            result = ctx.sql("SELECT COUNT(*) as count FROM 'test-table'").to_polars()
+            final_count = result.to_dicts()[0]["count"]
+
+            # Should have exactly 4 rows (2 initial + 2 additional)
+            # If the bug existed, this would be higher due to including old files
+            assert final_count == 4, (
+                f"Expected exactly 4 rows, got {final_count}. "
+                f"Active MPs: {len(active_ids)}, Files on disk: {len(all_files)}. "
+                "This suggests build_table is including inactive micropartition files."
+            )
+
+            # Verify the actual data is correct
+            all_data = ctx.sql("SELECT * FROM 'test-table' ORDER BY id").to_polars()
+            expected_names = ["Alice", "Bob", "Charlie", "David"]
+            actual_names = all_data["name"].to_list()
+            assert actual_names == expected_names, (
+                f"Expected names {expected_names}, got {actual_names}"
+            )
