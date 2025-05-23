@@ -7,8 +7,10 @@ from classes import Table
 from set.set_ops import SetOp, apply
 from sqlite_metadata import Base, Operation, OperationSnapshot
 
+from .version_repository import VersionRepository
 
-class SqliteVersionRepository:
+
+class SqliteVersionRepository(VersionRepository):
     CHECKPOINT_FREQUENCY = 1024
 
     def __init__(self, connection_string: str):
