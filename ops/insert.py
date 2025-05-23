@@ -1,5 +1,6 @@
 import io
 from enum import Enum
+from time import perf_counter
 from typing import Any, Protocol
 
 import polars as pl
@@ -152,6 +153,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         metadata_store: MetadataStore,
         items: pl.DataFrame,
     ):
+        start = perf_counter()
         if table.partition_keys is None or len(table.partition_keys) == 0:
             raise ValueError(f"Table `{table.name}` has no partition keys")
 
@@ -164,7 +166,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
 
         # Get the most recent MPs for each partition key
-        keys = [_build_key(k, table) for k in res.keys()]
+        recent_start = perf_counter()
         latest_mps: dict[str, MicroPartition] = {}
         for mp in metadata_store.micropartitions(
             table, s3, current_version, with_data=False
@@ -179,7 +181,10 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 latest_mps[mp.key_prefix] = mp
             elif curr.id < mp.id:
                 latest_mps[mp.key_prefix] = mp
+        recent_dur = perf_counter() - recent_start
+        print(f"Time to get most recent MPs: {recent_dur:.2f} seconds")
 
+        replacement_start = perf_counter()
         old_mp_ids: set[int] = set()
         for k, new_df in res.items():
             key = _build_key(k, table) + "/"
@@ -213,9 +218,12 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 # )
                 # TODO: if unique keys, maybe filter here?
                 parts.extend([(key, df) for df in compress(df)])
+        replacement_dur = perf_counter() - replacement_start
+        print(f"Time to get replacements: {replacement_dur:.2f} seconds")
 
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
         new_mps: list[MicroPartition] = []
+        s3_save_start = perf_counter()
         for i, (key_prefix, part) in enumerate(parts):
             part.seek(0)
             id = reserved_ids[i]
@@ -234,8 +242,15 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             # print(f"[key={key}] Saved to {key} w/ {key_prefix}")
             new_mps.append(micro_partition)
 
+        s3_save_dur = perf_counter() - s3_save_start
+
         metadata_store.delete_and_add_micro_partitions(
             table, current_version, list(old_mp_ids), new_mps
+        )
+
+        total_dur = perf_counter() - start
+        print(
+            f"Inserted {items.height} rows in {total_dur:.2f} seconds (s3 save: {s3_save_dur:.2f} seconds)"
         )
 
 

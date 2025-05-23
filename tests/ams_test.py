@@ -421,7 +421,7 @@ def test_clustering() -> None:
     delete_and_add(table, s3, metadata, delete_ids, df)
 
 
-@pytest.mark.skip(reason="Skipping ams test")
+# @pytest.mark.skip(reason="Skipping ams test")
 def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
     cleanup()
@@ -453,7 +453,7 @@ def test_ams():
             pl.col("time_window_start").str.to_datetime().alias("date").cast(pl.Date)
         )
 
-        if i > 10:
+        if i > 40:
             break
 
         insert(table, s3, metadata_store, df)
