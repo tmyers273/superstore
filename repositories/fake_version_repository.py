@@ -24,7 +24,7 @@ class FakeVersionRepository(VersionRepository[None]):
         self.ops[table.name].append(op)
 
         if version % self.CHECKPOINT_FREQUENCY == 0:
-            self._checkpoint(table, version)
+            self._checkpoint(table, version, session)
 
     def _checkpoint(self, table: Table, version: int, session: None):
         hams = self.get_hams(table, version, None)

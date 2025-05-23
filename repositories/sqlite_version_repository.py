@@ -33,25 +33,20 @@ class SqliteVersionRepository(VersionRepository[Session]):
         if version % self.CHECKPOINT_FREQUENCY == 0:
             self._checkpoint(session, table, version)
 
-        # Don't commit here - let the parent session handle it
+    def get_hams(self, table: Table, version: int, session: Session) -> set[int]:
+        # Find the highest checkpoint <= version
+        checkpoint = self._highest_checkpoint(session, table, version)
 
-    def get_hams(self, table: Table, version: int) -> set[int]:
-        with Session(self.engine) as session:
-            # Find the highest checkpoint <= version
-            checkpoint = self._highest_checkpoint(session, table, version)
+        if checkpoint is not None:
+            checkpoint_version, hams = checkpoint
+            # Get operations from checkpoint to target version
+            ops = self._get_ops_range(session, table, checkpoint_version + 1, version)
+        else:
+            hams = set()
+            # Get all operations from 0 to target version
+            ops = self._get_ops_range(session, table, 0, version)
 
-            if checkpoint is not None:
-                checkpoint_version, hams = checkpoint
-                # Get operations from checkpoint to target version
-                ops = self._get_ops_range(
-                    session, table, checkpoint_version + 1, version
-                )
-            else:
-                hams = set()
-                # Get all operations from 0 to target version
-                ops = self._get_ops_range(session, table, 0, version)
-
-            return apply(hams, ops)
+        return apply(hams, ops)
 
     def _set_op_to_operation_data(self, op: SetOp) -> tuple[str, Any]:
         """Convert a SetOp to operation_type and data suitable for Operation model"""
