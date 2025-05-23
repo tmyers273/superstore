@@ -526,11 +526,21 @@ def build_table(
                     raise ValueError("DATA_DIR is not set")
                 base_dir = os.path.join(data_dir, table.name, "mps/bucket")
 
+                # Only include files that correspond to wanted micropartition IDs
                 paths = []
                 for root, _, files in os.walk(base_dir):
                     for file in files:
                         if file.endswith(".parquet"):
-                            paths.append(os.path.join(root, file))
+                            # Extract the micropartition ID from the filename
+                            # The filename should be {id}.parquet
+                            filename_without_ext = os.path.splitext(file)[0]
+                            try:
+                                mp_id = int(filename_without_ext)
+                                if mp_id in wanted_ids:
+                                    paths.append(os.path.join(root, file))
+                            except ValueError:
+                                # Skip files that don't have numeric names
+                                continue
 
             s = perf_counter()
             dataset = ds.dataset(
