@@ -223,7 +223,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
         old_mp_ids: set[int] = set()
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             # Submit all partition processing tasks
             future_to_key = {
                 executor.submit(
@@ -293,7 +293,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         new_mps: list[MicroPartition] = []
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             # Submit all part saving tasks
             future_to_index = {
                 executor.submit(self._save_single_part, table, s3, part_data): i
@@ -347,9 +347,6 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             table, s3, metadata_store, parts
         )
 
-        print(f"Deleting {len(old_mp_ids)} MPs and adding {len(new_mps)} MPs")
-        print("Old mp ids", old_mp_ids)
-        print("New mp ids", [mp.id for mp in new_mps])
         metadata_store.delete_and_add_micro_partitions(
             table, current_version, list(old_mp_ids), new_mps
         )
