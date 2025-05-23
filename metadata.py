@@ -3,6 +3,8 @@ from typing import Generator, Protocol
 import polars as pl
 
 from classes import Database, MicroPartition, Schema, Table
+from repositories.fake_version_repository import FakeVersionRepository
+from repositories.version_repository import VersionRepository
 from s3 import S3Like
 from set.set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
@@ -155,7 +157,10 @@ class MetadataStore(Protocol):
 
 
 class FakeMetadataStore(MetadataStore):
-    def __init__(self) -> None:
+    def __init__(self, version_repo: VersionRepository | None = None) -> None:
+        if version_repo is None:
+            version_repo = FakeVersionRepository()
+        self.version_repo = version_repo
         self.table_versions: dict[str, int] = {}
         self.raw_micro_partitions: dict[int, dict] = {}
         """

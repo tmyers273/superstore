@@ -34,9 +34,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from classes import Table
-from db import Base
+from db import Base, OperationSnapshot
 from set.set_ops import apply
-from sqlite_metadata import OperationSnapshot
 from tests.set_ops_test import generate_random_ops
 
 

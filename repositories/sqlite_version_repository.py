@@ -4,8 +4,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from classes import Table
+from db import Base, Operation, OperationSnapshot
 from set.set_ops import SetOp, apply
-from sqlite_metadata import Base, Operation, OperationSnapshot
 
 from .version_repository import VersionRepository
 

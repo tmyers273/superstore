@@ -2,159 +2,30 @@ from typing import Generator
 
 import polars as pl
 from sqlalchemy import (
-    JSON,
-    Column,
-    ForeignKey,
-    Integer,
-    String,
-    UniqueConstraint,
     create_engine,
     select,
     text,
     update,
 )
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import Session
 
 from classes import Database, Header, MicroPartition, Schema, Statistics, Table
+from db import (
+    Base,
+    DatabaseModel,
+    MicroPartitionMetadata,
+    Operation,
+    SchemaModel,
+    TableModel,
+    TableVersion,
+)
 from metadata import MetadataStore
 from s3 import S3Like
 from set.set_ops import (
     SetOp,
-    SetOpAdd,
-    SetOpDelete,
-    SetOpDeleteAndAdd,
-    SetOpReplace,
     apply,
 )
-
-Base = declarative_base()
-
-
-class TableVersion(Base):
-    __tablename__ = "table_versions"
-
-    table_name = Column(String, primary_key=True)
-    version = Column(Integer, nullable=False, default=0)
-
-
-class MicroPartitionMetadata(Base):
-    __tablename__ = "micro_partitions"
-    __table_args__ = {"sqlite_autoincrement": True}
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
-    stats = Column(JSON, nullable=False)
-    key_prefix = Column(String, nullable=True)
-
-
-class Operation(Base):
-    __tablename__ = "operations"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
-    version = Column(Integer, nullable=False)
-    operation_type = Column(String, nullable=False)  # 'add' or 'replace'
-    data = Column(
-        JSON, nullable=False
-    )  # For add: list of ids, for replace: list of (old_id, new_id) tuples
-
-    def __repr__(self) -> str:
-        return f"Operation(id={self.id}, table_name={self.table_name}, version={self.version}, operation_type={self.operation_type}, data={self.data})"
-
-    def to_set_op(self) -> SetOp:
-        if self.operation_type == "add":
-            return SetOpAdd(self.data)
-        elif self.operation_type == "replace":
-            d = [tuple(d) for d in self.data]
-            return SetOpReplace(d)
-        elif self.operation_type == "delete":
-            return SetOpDelete(self.data)
-        elif self.operation_type == "delete_and_add":
-            return SetOpDeleteAndAdd((self.data[0], self.data[1]))
-        else:
-            raise ValueError(f"Unknown operation type: {self.operation_type}")
-
-
-class OperationSnapshot(Base):
-    __tablename__ = "operation_snapshots"
-    __table_args__ = {"sqlite_autoincrement": True}
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
-    version = Column(Integer, nullable=False)
-    data = Column(JSON, nullable=False)
-
-    def __repr__(self) -> str:
-        return f"OperationSnapshot(id={self.id}, table_name={self.table_name}, version={self.version}, data={self.data})"
-
-
-class DatabaseModel(Base):
-    __tablename__ = "databases"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False, unique=True)
-
-    @classmethod
-    def from_database(cls, database: Database) -> "DatabaseModel":
-        return DatabaseModel(id=database.id, name=database.name)
-
-    def to_database(self) -> Database:
-        return Database(id=self.id, name=self.name)
-
-
-class SchemaModel(Base):
-    __tablename__ = "schemas"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
-    database_id = Column(Integer, ForeignKey("databases.id"), nullable=False)
-
-    __table_args__ = (UniqueConstraint("database_id", "name"),)
-
-    @classmethod
-    def from_schema(cls, schema: Schema) -> "SchemaModel":
-        return SchemaModel(
-            id=schema.id, name=schema.name, database_id=schema.database_id
-        )
-
-    def to_schema(self) -> Schema:
-        return Schema(id=self.id, name=self.name, database_id=self.database_id)
-
-
-class TableModel(Base):
-    __tablename__ = "tables"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
-    schema_id = Column(Integer, ForeignKey("schemas.id"), nullable=False)
-    database_id = Column(Integer, ForeignKey("databases.id"), nullable=False)
-    partition_keys = Column(JSON, nullable=True)
-    sort_keys = Column(JSON, nullable=True)
-
-    __table_args__ = (UniqueConstraint("database_id", "schema_id", "name"),)
-
-    @classmethod
-    def from_table(cls, table: Table) -> "TableModel":
-        return TableModel(
-            id=table.id,
-            name=table.name,
-            schema_id=table.schema_id,
-            database_id=table.database_id,
-            partition_keys=table.partition_keys,
-            sort_keys=table.sort_keys,
-        )
-
-    def to_table(self) -> Table:
-        return Table(
-            id=self.id,
-            name=self.name,
-            schema_id=self.schema_id,
-            database_id=self.database_id,
-            columns=[],
-            partition_keys=self.partition_keys,
-            sort_keys=self.sort_keys,
-        )
 
 
 class SqliteMetadata(MetadataStore):
