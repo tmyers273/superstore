@@ -6,6 +6,8 @@ from tests.set_ops_test import generate_random_ops
 
 
 class VersionRepository(Protocol):
+    CHECKPOINT_FREQUENCY: int
+
     def add(self, table: Table, version: int, op: SetOp):
         raise NotImplementedError
 
@@ -37,21 +39,42 @@ class FakeVersionRepository(VersionRepository):
     def _highest_checkpoint(
         self, table: Table, version: int
     ) -> None | tuple[int, set[int]]:
-        pass
+        if table.name not in self.checkpoints:
+            return None
+
+        checkpoints = self.checkpoints[table.name]
+
+        # Iterate in reverse to find the highest checkpoint <= version
+        for checkpoint_version, hams in reversed(checkpoints):
+            if checkpoint_version <= version:
+                return (checkpoint_version, hams)
+
+        return None
 
     def get_hams(self, table: Table, version: int) -> set[int]:
+        if table.name not in self.ops:
+            return set()
+
         ops: list[SetOp] = self.ops[table.name]
         if version >= len(ops):
             raise ValueError(f"Version {version} is greater than the number of ops")
 
-        return apply(set(), ops[: version + 1])
+        checkpoint = self._highest_checkpoint(table, version)
+        if checkpoint is not None:
+            checkpoint_version, hams = checkpoint
+            ops = ops[checkpoint_version : version + 1]
+        else:
+            hams = set()
+            ops = ops[: version + 1]
+
+        return apply(hams, ops)
 
 
-def test_fake_version_repository():
+def check_version_repository(repo: VersionRepository):
     ops = generate_random_ops(10)
 
-    repo = FakeVersionRepository()
     repo.CHECKPOINT_FREQUENCY = 3
+
     expected = set()
     table = Table(
         id=0,
@@ -65,3 +88,7 @@ def test_fake_version_repository():
         repo.add(table, version, op)
         expected = apply(expected, op)
         assert repo.get_hams(table, version) == expected
+
+
+def test_fake_version_repository():
+    check_version_repository(FakeVersionRepository())
