@@ -64,12 +64,6 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_ops(self, table: Table) -> list[SetOp]:
-        """
-        Returns the list of operations for the table.
-        """
-        raise NotImplementedError
-
     def get_op(self, table: Table, version: int) -> SetOp | None:
         """
         Returns the operation for the table at the given version.
@@ -224,9 +218,6 @@ class FakeMetadataStore(MetadataStore):
 
     def get_table(self, name: str) -> Table | None:
         return self.tables.get(name)
-
-    def get_ops(self, table: Table) -> list[SetOp]:
-        return self.ops[table.name]
 
     def get_op(self, table: Table, version: int) -> SetOp | None:
         if table.name not in self.ops:

@@ -29,7 +29,6 @@ from set.set_ops import (
     SetOpAdd,
     SetOpDeleteAndAdd,
     SetOpReplace,
-    apply,
 )
 
 
@@ -114,16 +113,6 @@ class SqliteMetadata(MetadataStore):
         for mp in self.micropartitions(table, s3, version, with_data=False):
             stats.append(mp.stats)
         return stats
-
-    def get_ops(self, table: Table) -> list[SetOp]:
-        with Session(self.engine) as session:
-            stmt = (
-                select(Operation)
-                .where(Operation.table_name == table.name)
-                .order_by(Operation.id)
-            )
-            ops = session.execute(stmt).scalars().all()
-            return [op.to_set_op() for op in ops]
 
     def get_op(self, table: Table, version: int) -> SetOp | None:
         with Session(self.engine) as session:
@@ -296,11 +285,11 @@ class SqliteMetadata(MetadataStore):
         return list(range(start, new_max + 1))
 
     def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
-        ops = self.get_ops(table)
-        if version is not None:
-            ops = ops[:version]
+        if version is None:
+            version = self.get_table_version(table)
 
-        return apply(set(), ops)
+        with Session(self.engine) as session:
+            return self.version_repo.get_hams(table, version, session)
 
     def chunked(self, items: list, chunk_size: int) -> Generator[list, None, None]:
         for i in range(0, len(items), chunk_size):
@@ -314,11 +303,10 @@ class SqliteMetadata(MetadataStore):
         with_data: bool = True,
         prefix: str | None = None,
     ) -> Generator[MicroPartition, None, None]:
-        ids = self._get_ids(table, version)
-
         if prefix is not None and not prefix.endswith("/"):
             prefix = f"{prefix}/"
 
+        ids = self._get_ids(table, version)
         with Session(self.engine) as session:
             micro_partitions: list[MicroPartitionMetadata] = []
             # print(f"Loading {len(ids)} micro partitions")
