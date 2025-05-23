@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 from time import perf_counter
 from typing import Any, Protocol
@@ -168,6 +169,46 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         print(f"Time to get most recent MPs: {recent_dur:.2f} seconds")
         return latest_mps
 
+    def _process_partition(
+        self,
+        k: tuple,
+        new_df: pl.DataFrame,
+        table: Table,
+        latest_mps: dict[str, MicroPartition],
+        s3: S3Like,
+    ) -> tuple[list[tuple[str, pl.DataFrame, io.BytesIO]], set[int]]:
+        """Process a single partition key and return the parts and old MP IDs."""
+        key = _build_key(k, table) + "/"
+        unique = new_df.n_unique(table.partition_keys)
+        assert unique == 1, (
+            f"key={key} n_unique={unique} partition_keys={table.partition_keys}"
+        )
+
+        old_mp_ids: set[int] = set()
+        parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
+
+        # Load the current MP, if it exists
+        mp = latest_mps.get(key)
+        if mp is None:
+            if table.sort_keys is not None and len(table.sort_keys) > 0:
+                new_df = new_df.sort(table.sort_keys)
+
+            parts.extend([(key, df_part, part) for (df_part, part) in compress(new_df)])
+        else:
+            old_mp_ids.add(mp.id)
+            existing_raw = s3.get_object("bucket", f"{mp.key_prefix or ''}{mp.id}")
+            if existing_raw is None:
+                raise ValueError(f"Micropartition `{mp.id}` not found")
+
+            existing_df = pl.read_parquet(existing_raw)
+            df = existing_df.vstack(new_df)
+            if table.sort_keys is not None and len(table.sort_keys) > 0:
+                df = df.sort(table.sort_keys)
+
+            parts.extend([(key, df_part, part) for (df_part, part) in compress(df)])
+
+        return parts, old_mp_ids
+
     def insert(
         self,
         table: Table,
@@ -182,9 +223,6 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         # Get the current table version number
         current_version = metadata_store.get_table_version(table)
 
-        """A list of (prefix, parquet file) tuples"""
-        parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
-
         res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
 
         # Get the most recent MPs for each partition key
@@ -193,41 +231,31 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         )
 
         replacement_start = perf_counter()
+
+        # Process partitions in parallel using ThreadPoolExecutor
+        parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
         old_mp_ids: set[int] = set()
-        for k, new_df in res.items():
-            key = _build_key(k, table) + "/"
-            unique = new_df.n_unique(table.partition_keys)
-            assert unique == 1, (
-                f"key={key} n_unique={unique} partition_keys={table.partition_keys}"
-            )
 
-            # Load the current MP, if it exists
-            mp = latest_mps.get(key)
-            if mp is None:
-                # print(f"[key={key}] Could not find latest MP for key", key)
-                if table.sort_keys is not None and len(table.sort_keys) > 0:
-                    new_df = new_df.sort(table.sort_keys)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all partition processing tasks
+            future_to_key = {
+                executor.submit(
+                    self._process_partition, k, new_df, table, latest_mps, s3
+                ): k
+                for k, new_df in res.items()
+            }
 
-                parts.extend(
-                    [(key, df_part, part) for (df_part, part) in compress(new_df)]
-                )
-            else:
-                old_mp_ids.add(mp.id)
-                # print(f"[key={key}] Append to {mp.id} for key_prefix={key}")
-                existing_raw = s3.get_object("bucket", f"{mp.key_prefix or ''}{mp.id}")
-                if existing_raw is None:
-                    raise ValueError(f"Micropartition `{mp.id}` not found")
+            # Collect results as they complete
+            for future in as_completed(future_to_key):
+                k = future_to_key[future]
+                try:
+                    partition_parts, partition_old_mp_ids = future.result()
+                    parts.extend(partition_parts)
+                    old_mp_ids.update(partition_old_mp_ids)
+                except Exception as exc:
+                    print(f"Partition {k} generated an exception: {exc}")
+                    raise
 
-                existing_df = pl.read_parquet(existing_raw)
-                df = existing_df.vstack(new_df)
-                if table.sort_keys is not None and len(table.sort_keys) > 0:
-                    df = df.sort(table.sort_keys)
-
-                # print(
-                #     f"[key={key}] Existing has {existing_df.height} rows, new has {new_df.height}, total has {df.height}"
-                # )
-                # TODO: if unique keys, maybe filter here?
-                parts.extend([(key, df_part, part) for (df_part, part) in compress(df)])
         replacement_dur = perf_counter() - replacement_start
         print(f"Time to get replacements: {replacement_dur:.2f} seconds")
 
