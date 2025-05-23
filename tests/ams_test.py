@@ -424,14 +424,9 @@ def test_clustering() -> None:
 # @pytest.mark.skip(reason="Skipping ams test")
 def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
-    cleanup()
+    cleanup(mp_path="ams_scratch/sp-traffic/mps/bucket")
     files = get_parquet_files("./ams")
     print("Found", len(files), "parquet files")
-
-    # Load the first one and print the schema
-    df = pl.read_parquet(files[0])
-    for k, v in df.schema.items():
-        print(k, v)
 
     table = get_table()
 
@@ -441,7 +436,15 @@ def test_ams():
     print("Table", table)
     # s3 = FakeS3()
 
-    total_start = perf_counter()
+    with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+        s = perf_counter()
+        df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
+        df = df.to_polars()
+        e = perf_counter()
+        print(f"Time: {e - s} seconds")
+
+        print(df)
+
     total_dur = 0
     total_count = 0
     for i, file in enumerate(files):
@@ -453,7 +456,7 @@ def test_ams():
             pl.col("time_window_start").str.to_datetime().alias("date").cast(pl.Date)
         )
 
-        if i > 40:
+        if i > 5:
             break
 
         insert(table, s3, metadata_store, df)
@@ -467,9 +470,22 @@ def test_ams():
             f"    Inserted {df.height} rows at {rate:.2f}k rows/s (total rate: {total_rate:.2f}k rows/s)"
         )
 
+        print(
+            "After insertion, current CAMS count:", len(metadata_store._get_ids(table))
+        )
+
+        with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+            df = ctx.sql("SELECT count(*) as count FROM 'sp-traffic'")
+            actual_count = df.to_polars().to_dicts()[0]["count"]
+            assert actual_count == total_count, (
+                f"Actual count {actual_count} != total count {total_count}"
+            )
+
     stats = {}
     for mp in metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
+
+    print(f"Total count from parquet files: {total_count}")
 
     with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
@@ -478,4 +494,10 @@ def test_ams():
         e = perf_counter()
         print(f"Time: {e - s} seconds")
 
+        print(df)
+
+        df = ctx.sql(
+            "SELECT count(*), idempotency_id FROM 'sp-traffic' GROUP BY idempotency_id"
+        )
+        df = df.to_polars()
         print(df)

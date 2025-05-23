@@ -150,7 +150,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         metadata_store: MetadataStore,
         current_version: int,
     ) -> dict[str, MicroPartition]:
-        recent_start = perf_counter()
+        # recent_start = perf_counter()
         latest_mps: dict[str, MicroPartition] = {}
         for mp in metadata_store.micropartitions(
             table, s3, current_version, with_data=False
@@ -165,8 +165,8 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                 latest_mps[mp.key_prefix] = mp
             elif curr.id < mp.id:
                 latest_mps[mp.key_prefix] = mp
-        recent_dur = perf_counter() - recent_start
-        print(f"Time to get most recent MPs: {recent_dur:.2f} seconds")
+        # recent_dur = perf_counter() - recent_start
+        # print(f"Time to get most recent MPs: {recent_dur:.2f} seconds")
         return latest_mps
 
     def _process_partition(
@@ -217,13 +217,13 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         latest_mps: dict[str, MicroPartition],
     ) -> tuple[list[tuple[str, pl.DataFrame, io.BytesIO]], set[int]]:
         """Generate replacement parts using parallel processing."""
-        replacement_start = perf_counter()
+        # replacement_start = perf_counter()
 
         # Process partitions in parallel using ThreadPoolExecutor
         parts: list[tuple[str, pl.DataFrame, io.BytesIO]] = []
         old_mp_ids: set[int] = set()
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             # Submit all partition processing tasks
             future_to_key = {
                 executor.submit(
@@ -243,8 +243,8 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
                     print(f"Partition {k} generated an exception: {exc}")
                     raise
 
-        replacement_dur = perf_counter() - replacement_start
-        print(f"Time to get replacements: {replacement_dur:.2f} seconds")
+        # replacement_dur = perf_counter() - replacement_start
+        # print(f"Time to get replacements: {replacement_dur:.2f} seconds")
 
         return parts, old_mp_ids
 
@@ -283,7 +283,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
     ) -> list[MicroPartition]:
         """Save parts to S3 and create MicroPartition objects using parallel processing."""
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
-        s3_save_start = perf_counter()
+        # s3_save_start = perf_counter()
 
         # Prepare data for parallel processing
         part_data_list = [
@@ -293,7 +293,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         new_mps: list[MicroPartition] = []
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             # Submit all part saving tasks
             future_to_index = {
                 executor.submit(self._save_single_part, table, s3, part_data): i
@@ -314,8 +314,8 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             # Add results in order (filter out None values, though there shouldn't be any)
             new_mps.extend([mp for mp in results if mp is not None])
 
-        s3_save_dur = perf_counter() - s3_save_start
-        print(f"S3 save time: {s3_save_dur:.2f} seconds")
+        # s3_save_dur = perf_counter() - s3_save_start
+        # print(f"S3 save time: {s3_save_dur:.2f} seconds")
 
         return new_mps
 
@@ -333,14 +333,13 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         # Get the current table version number
         current_version = metadata_store.get_table_version(table)
 
-        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
-
         # Get the most recent MPs for each partition key
         latest_mps = self._get_most_recent_mps(
             table, s3, metadata_store, current_version
         )
 
         # Generate replacements in parallel
+        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
         parts, old_mp_ids = self._generate_replacements(table, s3, res, latest_mps)
 
         # Save parts to S3 and create MicroPartitions
@@ -348,6 +347,9 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             table, s3, metadata_store, parts
         )
 
+        print(f"Deleting {len(old_mp_ids)} MPs and adding {len(new_mps)} MPs")
+        print("Old mp ids", old_mp_ids)
+        print("New mp ids", [mp.id for mp in new_mps])
         metadata_store.delete_and_add_micro_partitions(
             table, current_version, list(old_mp_ids), new_mps
         )
