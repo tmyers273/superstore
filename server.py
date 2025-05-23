@@ -20,6 +20,7 @@ from db import Base, User, engine
 from local_s3 import LocalS3
 from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
+from tests import ams_test
 from tests.ams_test import get_parquet_files
 from tests.audit_log_items_test import create_table_if_needed, get_table
 from tests.run_test import build_table, insert
@@ -72,8 +73,8 @@ app.add_middleware(
 data_dir = os.getenv("DATA_DIR")
 db_path = f"sqlite:///{data_dir}/ams.db"
 # db_path = f"sqlite:///{data_dir}/db.db"
-s3_path = f"{data_dir}/sp-traffic/mps"
-table_name = "sp-traffic"
+s3_path = f"{data_dir}/audit_log_items/mps"
+table_name = "audit_log_items"
 print(f"data_dir: {data_dir}")
 print(f"S3 Path: {s3_path}")
 
@@ -385,6 +386,69 @@ async def databases(user: User = Depends(current_active_user)):
     ]
 
     return {"databases": dbs}
+
+
+@app.get("/create-sp-traffic-table")
+async def create_sp_traffic_table(schema_name: str = "na"):
+    db = metadata.get_database("db")
+    if db is None:
+        db = metadata.create_database(Database(id=0, name="db"))
+
+    schema = metadata.get_schema(schema_name)
+    if schema is None:
+        schema = metadata.create_schema(
+            Schema(id=0, name=schema_name, database_id=db.id)
+        )
+
+    table = metadata.get_table("sp_traffic")
+    if table is None:
+        table = ams_test.get_table()
+        table.id = 0
+        table.name = "sp_traffic"
+        table.schema_id = schema.id
+        table.database_id = db.id
+        metadata.create_table(table)
+
+    return {"message": "Table created"}
+
+
+@app.get("/ingest-na-sp-traffic")
+async def ingest_na_sp_traffic(limit: int = 5):
+    await create_sp_traffic_table(schema_name="na")
+
+    table = metadata.get_table("sp_traffic")
+    if table is None:
+        raise Exception("Table not found")
+
+    s3_path = f"{data_dir}/sp_traffic/mps"
+    s3 = LocalS3(s3_path)
+
+    files = get_parquet_files("/ingest/ams/na/sp-traffic")
+    print("Found", len(files), "parquet files")
+
+    total_dur = 0.0
+    total_count = 0
+    for i, file in enumerate(files):
+        s = perf_counter()
+        print(f"Processing {file} ({i + 1}/{len(files)})")
+        df = pl.read_parquet(file)
+
+        if i > limit:
+            break
+
+        insert(table, s3, metadata, df)
+
+        dur = perf_counter() - s
+        total_count += df.height
+        total_dur += dur
+        rate = df.height / dur / 1000
+        total_rate = total_count / total_dur / 1000
+        print(
+            f"    Inserted {df.height} rows at {rate:.2f}k rows/s (total rate: {total_rate:.2f}k rows/s)"
+        )
+        shutil.move(file, os.path.join("/done", file))
+
+    return {"message": "Table created"}
 
 
 if __name__ == "__main__":
