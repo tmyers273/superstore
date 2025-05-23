@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y curl gcc python3-dev libsqlite3-dev && 
 WORKDIR /app
 
 # Install dependencies directly
-RUN pip install uvicorn python-dotenv fastapi polars duckdb sqlalchemy datafusion pyarrow matplotlib pytest
+RUN pip install uvicorn python-dotenv fastapi polars duckdb sqlalchemy datafusion pyarrow matplotlib pytest fastapi_users
 
 # Copy application code
 COPY . .
