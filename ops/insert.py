@@ -209,27 +209,14 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         return parts, old_mp_ids
 
-    def insert(
+    def _generate_replacements(
         self,
         table: Table,
         s3: S3Like,
-        metadata_store: MetadataStore,
-        items: pl.DataFrame,
-    ):
-        start = perf_counter()
-        if table.partition_keys is None or len(table.partition_keys) == 0:
-            raise ValueError(f"Table `{table.name}` has no partition keys")
-
-        # Get the current table version number
-        current_version = metadata_store.get_table_version(table)
-
-        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
-
-        # Get the most recent MPs for each partition key
-        latest_mps = self._get_most_recent_mps(
-            table, s3, metadata_store, current_version
-        )
-
+        res: dict,
+        latest_mps: dict[str, MicroPartition],
+    ) -> tuple[list[tuple[str, pl.DataFrame, io.BytesIO]], set[int]]:
+        """Generate replacement parts using parallel processing."""
         replacement_start = perf_counter()
 
         # Process partitions in parallel using ThreadPoolExecutor
@@ -258,6 +245,32 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         replacement_dur = perf_counter() - replacement_start
         print(f"Time to get replacements: {replacement_dur:.2f} seconds")
+
+        return parts, old_mp_ids
+
+    def insert(
+        self,
+        table: Table,
+        s3: S3Like,
+        metadata_store: MetadataStore,
+        items: pl.DataFrame,
+    ):
+        start = perf_counter()
+        if table.partition_keys is None or len(table.partition_keys) == 0:
+            raise ValueError(f"Table `{table.name}` has no partition keys")
+
+        # Get the current table version number
+        current_version = metadata_store.get_table_version(table)
+
+        res = items.partition_by(table.partition_keys, as_dict=True, include_key=True)
+
+        # Get the most recent MPs for each partition key
+        latest_mps = self._get_most_recent_mps(
+            table, s3, metadata_store, current_version
+        )
+
+        # Generate replacements in parallel
+        parts, old_mp_ids = self._generate_replacements(table, s3, res, latest_mps)
 
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
         new_mps: list[MicroPartition] = []
