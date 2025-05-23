@@ -471,11 +471,6 @@ def test_ams():
     for mp in metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
-    # for id, stat in stats.items():
-    #     print(f"Micropartition {id}:")
-    #     stat.dump()
-    # break
-
     with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")

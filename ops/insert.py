@@ -59,7 +59,8 @@ class InsertStrategy(Protocol):
         table: Table,
         s3: S3Like,
         metadata_store: MetadataStore,
-        parts: list[io.BytesIO] | list[tuple[str, io.BytesIO]],
+        parts: list[tuple[pl.DataFrame, io.BytesIO]]
+        | list[tuple[str, pl.DataFrame, io.BytesIO]],
     ):
         # Get the current table version number
         current_version = metadata_store.get_table_version(table)
@@ -67,19 +68,23 @@ class InsertStrategy(Protocol):
         micro_partitions = []
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
 
+        part: io.BytesIO
+        key_prefix: str | None
+        df_part: pl.DataFrame
         for i, raw_part in enumerate(parts):
-            if isinstance(raw_part, tuple):
-                key_prefix, part = raw_part
-                key_prefix += "/"
+            if isinstance(raw_part, tuple) and len(raw_part) == 3:
+                key_prefix, df_part, part = raw_part
+                if key_prefix is not None:
+                    key_prefix += "/"
             else:
                 key_prefix = None
-                part = raw_part
+                df_part, part = raw_part
 
             id = reserved_ids[i]
 
-            part.seek(0)
-            stats = Statistics.from_bytes(part)
-            part.seek(0)
+            parquet_buffer = part.getvalue()
+            stats = Statistics.from_df(df_part)
+            stats.filesize = len(parquet_buffer)
 
             stats.id = id
             micro_partition = MicroPartition(
@@ -91,17 +96,8 @@ class InsertStrategy(Protocol):
             )
             key = f"{key_prefix or ''}{id}"
 
-            if id == 2:
-                df = (
-                    pl.read_parquet(part)
-                    .unique(subset=table.partition_keys)
-                    .select(table.partition_keys)
-                )
-                part.seek(0)
-
             # Try saving to S3
-            part.seek(0)
-            s3.put_object("bucket", key, part.getvalue())
+            s3.put_object("bucket", key, parquet_buffer)
 
             micro_partitions.append(micro_partition)
 
@@ -224,10 +220,11 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
         new_mps: list[MicroPartition] = []
         s3_save_start = perf_counter()
-        for i, (key_prefix, part) in enumerate(parts):
-            part.seek(0)
+        for i, (key_prefix, (df_part, part)) in enumerate(parts):
             id = reserved_ids[i]
-            stats = Statistics.from_bytes(part)
+            parquet_buffer = part.getvalue()
+            stats = Statistics.from_df(df_part)
+            stats.filesize = len(parquet_buffer)
             stats.id = id
             micro_partition = MicroPartition(
                 id=id,
@@ -238,8 +235,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             )
             key = f"{key_prefix}{id}"
 
-            s3.put_object("bucket", key, part.getvalue())
-            # print(f"[key={key}] Saved to {key} w/ {key_prefix}")
+            s3.put_object("bucket", key, parquet_buffer)
             new_mps.append(micro_partition)
 
         s3_save_dur = perf_counter() - s3_save_start

@@ -5,7 +5,7 @@ import polars as pl
 
 def compress(
     df: pl.DataFrame, max_file_size: int = 16 * 1024 * 1024, tolerance: float = 0.20
-) -> list[io.BytesIO]:
+) -> list[tuple[pl.DataFrame, io.BytesIO]]:
     """
     Splits the given dataframe into one or more parquet files,
     aiming to keep the size of each file as close to `max_file_size`
@@ -37,7 +37,7 @@ def compress(
         )
 
         buffer, rows = _ratio_based_compress(df, min, max, avg_bytes_per_row)
-        parts.append(buffer)
+        parts.append((df.slice(0, rows), buffer))
         df = df.slice(rows)
 
         records.append((buffer.tell(), rows))

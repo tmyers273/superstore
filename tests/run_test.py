@@ -146,16 +146,18 @@ def delete_and_add(
     # print("In delete and add", new_df)
     dfs = compress(new_df)
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(dfs))
-    for i, buffer in enumerate(dfs):
+    for i, (df_part, buffer) in enumerate(dfs):
         id = reserved_ids[i]
 
         # Create a new micro partition
-        stats = Statistics.from_bytes(buffer)
+        parquet_buffer = buffer.getvalue()
+        stats = Statistics.from_df(df_part)
+        stats.filesize = len(parquet_buffer)
         stats.id = id
         micro_partition = MicroPartition(
             id=id,
             header=Header(table_id=table.id),
-            data=buffer.getvalue(),
+            data=None,
             stats=stats,
             key_prefix=key_prefix,
         )
@@ -163,7 +165,7 @@ def delete_and_add(
 
         # Try saving to S3
         key = f"{key_prefix or ''}{id}"
-        s3.put_object("bucket", key, buffer.getvalue())
+        s3.put_object("bucket", key, parquet_buffer)
 
     metadata_store.delete_and_add_micro_partitions(
         table, current_version, delete_ids, mps
