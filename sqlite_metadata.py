@@ -172,11 +172,6 @@ class SqliteMetadata(MetadataStore):
 
             session.commit()
 
-            # Load all ops from the db
-            q = select(Operation)
-            r = session.execute(q).fetchall()
-            print("Ops result", r)
-
     def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
