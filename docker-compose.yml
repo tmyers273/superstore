@@ -12,6 +12,7 @@ services:
 
   blue-web: &web
     image: ${REGISTRY}/blob_storage:${TAG:-latest}
+    restart: unless-stopped
     networks:
       - webgateway
     # deploy:
@@ -38,6 +39,7 @@ services:
 
   green-web:
     <<: *web
+    restart: unless-stopped
 
 networks:
   webgateway:
