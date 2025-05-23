@@ -446,7 +446,10 @@ async def ingest_na_sp_traffic(limit: int = 5):
         print(
             f"    Inserted {df.height} rows at {rate:.2f}k rows/s (total rate: {total_rate:.2f}k rows/s)"
         )
-        shutil.move(file, f"/done{file}")
+
+        dst = f"/done{file}"
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.move(file, dst)
 
     return {"message": "Table created"}
 
