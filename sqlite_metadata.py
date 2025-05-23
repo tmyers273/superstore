@@ -76,6 +76,19 @@ class Operation(Base):
             raise ValueError(f"Unknown operation type: {self.operation_type}")
 
 
+class OperationSnapshot(Base):
+    __tablename__ = "operation_snapshots"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_name = Column(String, ForeignKey("table_versions.table_name"), nullable=False)
+    version = Column(Integer, nullable=False)
+    data = Column(JSON, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"OperationSnapshot(id={self.id}, table_name={self.table_name}, version={self.version}, data={self.data})"
+
+
 class DatabaseModel(Base):
     __tablename__ = "databases"
 
