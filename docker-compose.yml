@@ -47,6 +47,8 @@ services:
     restart: unless-stopped
     networks:
       - webgateway
+    env:
+      - VITE_USE_REAL_API=true
     container_name: superstore-frontend
 
 networks:
