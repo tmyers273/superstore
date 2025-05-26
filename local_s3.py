@@ -1,11 +1,15 @@
 import os
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as ds
 from datafusion import SessionContext
 
-from s3 import S3Like
+from s3 import S3Like, TableRegistration
+
+if TYPE_CHECKING:
+    from classes import Table
 
 
 class LocalS3(S3Like):
@@ -37,7 +41,7 @@ class LocalS3(S3Like):
         self,
         ctx: SessionContext,
         table_name: str,
-        table,
+        table: "Table",
         metadata_store,
         version: int | None = None,
         with_data: bool = True,
@@ -97,3 +101,33 @@ class LocalS3(S3Like):
         ctx.register_dataset(table_name, dataset)
         e = perf_counter()
         print(f"    Time to register dataset: {(e - s) * 1000} ms")
+
+    def register_datasets(
+        self,
+        ctx: SessionContext,
+        registrations: list[TableRegistration],
+        metadata_store,
+        with_data: bool = True,
+    ) -> dict[str, str]:
+        """Register multiple datasets by calling register_dataset for each."""
+        registered_names = {}
+
+        for reg in registrations:
+            # Use provided table_name or fall back to table.name
+            table_name = (
+                reg.table_name if reg.table_name is not None else reg.table.name
+            )
+
+            self.register_dataset(
+                ctx=ctx,
+                table_name=table_name,
+                table=reg.table,
+                metadata_store=metadata_store,
+                version=reg.version,
+                with_data=with_data,
+                included_mp_ids=reg.included_mp_ids,
+                paths=reg.paths,
+            )
+            registered_names[reg.table.name] = table_name
+
+        return registered_names

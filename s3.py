@@ -2,10 +2,25 @@ import os
 import shutil
 import tempfile
 import weakref
-from typing import Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    pass
 
 import pyarrow.dataset as ds
 from datafusion import SessionContext
+
+
+@dataclass
+class TableRegistration:
+    """Configuration for registering a single table dataset."""
+
+    table: "Table"
+    version: int | None = None
+    table_name: str | None = None  # If None, use table.name
+    included_mp_ids: set[int] | None = None
+    paths: list[str] | None = None
 
 
 class S3Like(Protocol):
@@ -19,14 +34,34 @@ class S3Like(Protocol):
         self,
         ctx: SessionContext,
         table_name: str,
-        table,
+        table: "Table",
         metadata_store,
         version: int | None = None,
         with_data: bool = True,
         included_mp_ids: set[int] | None = None,
         paths: list[str] | None = None,
     ):
-        """Register a dataset with the given SessionContext for querying."""
+        """Register a single dataset with the given SessionContext for querying."""
+        raise NotImplementedError
+
+    def register_datasets(
+        self,
+        ctx: SessionContext,
+        registrations: list[TableRegistration],
+        metadata_store,
+        with_data: bool = True,
+    ) -> dict[str, str]:
+        """Register multiple datasets with the given SessionContext for querying.
+
+        Args:
+            ctx: SessionContext to register datasets with
+            registrations: List of TableRegistration objects specifying what to register
+            metadata_store: Metadata store for accessing table data
+            with_data: Whether to include data in registration (applies to all tables)
+
+        Returns:
+            Dictionary mapping table.name -> registered_table_name
+        """
         raise NotImplementedError
 
 
@@ -62,7 +97,7 @@ class FakeS3(S3Like):
         self,
         ctx: SessionContext,
         table_name: str,
-        table,
+        table: "Table",
         metadata_store,
         version: int | None = None,
         with_data: bool = True,
@@ -86,3 +121,33 @@ class FakeS3(S3Like):
 
         # Store the tmpdir so it can be cleaned up automatically by the finalizer
         self._temp_dirs.append(tmpdir)
+
+    def register_datasets(
+        self,
+        ctx: SessionContext,
+        registrations: list[TableRegistration],
+        metadata_store,
+        with_data: bool = True,
+    ) -> dict[str, str]:
+        """Register multiple datasets by calling register_dataset for each."""
+        registered_names = {}
+
+        for reg in registrations:
+            # Use provided table_name or fall back to table.name
+            table_name = (
+                reg.table_name if reg.table_name is not None else reg.table.name
+            )
+
+            self.register_dataset(
+                ctx=ctx,
+                table_name=table_name,
+                table=reg.table,
+                metadata_store=metadata_store,
+                version=reg.version,
+                with_data=with_data,
+                included_mp_ids=reg.included_mp_ids,
+                paths=reg.paths,
+            )
+            registered_names[reg.table.name] = table_name
+
+        return registered_names
