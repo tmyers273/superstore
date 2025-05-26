@@ -87,7 +87,7 @@ db_path = f"sqlite:///{data_dir}/db.db"
 # db_path = f"sqlite:///{data_dir}/db.db"
 s3_path = f"{data_dir}/audit_log_items/mps"
 table_name = "audit_log_items"
-print(f"data_dir: {data_dir}")
+print(f"data_dir: {data_dir}, db_path={db_path}")
 print(f"S3 Path: {s3_path}")
 
 metadata = SqliteMetadata(db_path)
