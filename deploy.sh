@@ -26,7 +26,7 @@ echo "Deploying ${REGISTRY}:${TAG} to ${NEW_COLOR} environment..."
 docker compose pull "${NEW_COLOR}-web"
 
 # Deploy new version
-docker compose up --detach --wait --no-deps "${NEW_COLOR}-web"
+docker compose up --detach --wait --no-deps "${NEW_COLOR}-web" "superstore-frontend"
 
 # Stop old deployment
 if [ -n "$CURRENT_CONTAINER" ]; then

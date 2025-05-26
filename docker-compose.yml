@@ -41,6 +41,13 @@ services:
     <<: *web
     restart: unless-stopped
 
+  superstore-frontend:
+    image: ${REGISTRY}/ss-fe:${TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - webgateway
+    container_name: superstore-frontend
+
 networks:
   webgateway:
     driver: bridge
