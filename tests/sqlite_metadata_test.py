@@ -29,13 +29,15 @@ class TestSqliteMetadata(unittest.TestCase):
                 Schema(id=0, name="test_schema", database_id=self.database.id)
             )
         )
-        self.table = await self.metadata.create_table(
-            Table(
-                id=0,
-                name="test_table",
-                schema_id=self.schema.id,
-                database_id=self.database.id,
-                columns=[],
+        self.table = asyncio.run(
+            self.metadata.create_table(
+                Table(
+                    id=0,
+                    name="test_table",
+                    schema_id=self.schema.id,
+                    database_id=self.database.id,
+                    columns=[],
+                )
             )
         )
 

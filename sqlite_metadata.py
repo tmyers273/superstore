@@ -92,7 +92,7 @@ class SqliteMetadata(MetadataStore):
             session.commit()
             return schema_model.to_schema()
 
-    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+    async def get_tables(self, include_dropped: bool = False) -> list[Table]:
         with Session(self.engine) as session:
             stmt = select(TableModel)
             if not include_dropped:

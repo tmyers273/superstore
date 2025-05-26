@@ -52,7 +52,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+    async def get_tables(self, include_dropped: bool = False) -> list[Table]:
         """
         Returns a list of all the tables.
         """
@@ -227,7 +227,7 @@ class FakeMetadataStore(MetadataStore):
         self.tables[table.name] = table
         return table
 
-    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+    async def get_tables(self, include_dropped: bool = False) -> list[Table]:
         tables = list(self.tables.values())
         if not include_dropped:
             tables = [t for t in tables if t.status == TableStatus.ACTIVE]

@@ -153,7 +153,7 @@ async def table(
     sortDirection: str = "asc",
     user: User = Depends(current_active_user),
 ):
-    print(metadata.get_tables())
+    print(await metadata.get_tables())
     table = metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
@@ -436,7 +436,7 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
 async def databases(user: User = Depends(current_active_user)):
     databases = await metadata.get_databases()
     schemas = await metadata.get_schemas()
-    tables = metadata.get_tables()
+    tables = await metadata.get_tables()
 
     # Create a nested structure using list comprehensions
     dbs = [

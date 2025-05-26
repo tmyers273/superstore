@@ -59,7 +59,7 @@ def test_data_generators():
     print()
 
 
-def test_table_creation():
+async def test_table_creation():
     """Test full table creation and data insertion"""
     print("Testing table creation and data insertion...")
 
@@ -74,7 +74,7 @@ def test_table_creation():
         print("✅ Fake tables and data created successfully!")
 
         # Verify tables were created
-        tables = metadata.get_tables()
+        tables = await metadata.get_tables()
         print(f"Total tables created: {len(tables)}")
 
         for table in tables:
@@ -105,21 +105,3 @@ def test_table_creation():
         import traceback
 
         traceback.print_exc()
-
-
-def main():
-    """Run all tests"""
-    print("🧪 Testing Fake Data Generation")
-    print("=" * 50)
-
-    test_data_generators()
-    print("-" * 50)
-    test_table_creation()
-
-    print("\n✨ Test completed!")
-    print(f"Test data directory: {os.environ['DATA_DIR']}")
-    print("You can inspect the generated files in the above directory.")
-
-
-if __name__ == "__main__":
-    main()

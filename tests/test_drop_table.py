@@ -40,7 +40,7 @@ class TestDropTable:
 
                 # Verify table is active and visible
                 assert table.status == TableStatus.ACTIVE
-                tables = metadata.get_tables()
+                tables = await metadata.get_tables()
                 assert len(tables) == 1
                 assert tables[0].name == "test_table"
                 assert tables[0].status == TableStatus.ACTIVE
@@ -54,14 +54,14 @@ class TestDropTable:
                 assert dropped_table.status == TableStatus.DROPPED
 
                 # Verify table is no longer visible in normal queries
-                tables = metadata.get_tables()
+                tables = await metadata.get_tables()
                 assert len(tables) == 0
 
                 found_table = metadata.get_table("test_table")
                 assert found_table is None
 
                 # Verify table is still visible when including dropped tables
-                tables_with_dropped = metadata.get_tables(include_dropped=True)
+                tables_with_dropped = await metadata.get_tables(include_dropped=True)
                 assert len(tables_with_dropped) == 1
                 assert tables_with_dropped[0].status == TableStatus.DROPPED
 
@@ -96,7 +96,7 @@ class TestDropTable:
 
         # Verify table is active and visible
         assert table.status == TableStatus.ACTIVE
-        tables = metadata.get_tables()
+        tables = await metadata.get_tables()
         assert len(tables) == 1
         assert tables[0].name == "test_table"
         assert tables[0].status == TableStatus.ACTIVE
@@ -110,14 +110,14 @@ class TestDropTable:
         assert dropped_table.status == TableStatus.DROPPED
 
         # Verify table is no longer visible in normal queries
-        tables = metadata.get_tables()
+        tables = await metadata.get_tables()
         assert len(tables) == 0
 
         found_table = metadata.get_table("test_table")
         assert found_table is None
 
         # Verify table is still visible when including dropped tables
-        tables_with_dropped = metadata.get_tables(include_dropped=True)
+        tables_with_dropped = await metadata.get_tables(include_dropped=True)
         assert len(tables_with_dropped) == 1
         assert tables_with_dropped[0].status == TableStatus.DROPPED
 
@@ -192,7 +192,7 @@ class TestDropTable:
             tables.append(table)
 
         # Verify all tables are active
-        active_tables = metadata.get_tables()
+        active_tables = await metadata.get_tables()
         assert len(active_tables) == 3
         for table in active_tables:
             assert table.status == TableStatus.ACTIVE
@@ -201,13 +201,13 @@ class TestDropTable:
         metadata.drop_table(tables[1])
 
         # Verify only 2 tables are active
-        active_tables = metadata.get_tables()
+        active_tables = await metadata.get_tables()
         assert len(active_tables) == 2
         active_names = {t.name for t in active_tables}
         assert active_names == {"table_1", "table_3"}
 
         # Verify all 3 tables exist when including dropped
-        all_tables = metadata.get_tables(include_dropped=True)
+        all_tables = await metadata.get_tables(include_dropped=True)
         assert len(all_tables) == 3
 
         # Verify the dropped table has correct status
