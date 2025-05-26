@@ -52,10 +52,10 @@ def get_table() -> Table:
     )
 
 
-def create_table_if_needed(metadata: MetadataStore) -> Table:
+async def create_table_if_needed(metadata: MetadataStore) -> Table:
     database = metadata.get_database("ams")
     if database is None:
-        database = metadata.create_database(Database(id=0, name="ams"))
+        database = await metadata.create_database(Database(id=0, name="ams"))
 
     schema = metadata.get_schema("default")
     if schema is None:

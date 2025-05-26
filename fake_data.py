@@ -280,7 +280,7 @@ def check_fake_tables_exist(metadata: MetadataStore) -> bool:
     return False
 
 
-def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
+async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     """Create fake tables and data for development environment"""
     if os.getenv("APP_ENV") != "dev":
         print("Not in dev environment, skipping fake data creation")
@@ -296,7 +296,7 @@ def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     # Create development database and schema
     dev_db = metadata.get_database("development")
     if dev_db is None:
-        dev_db = metadata.create_database(Database(id=0, name="development"))
+        dev_db = await metadata.create_database(Database(id=0, name="development"))
 
     dev_schema = metadata.get_schema("dev_schema")
     if dev_schema is None:
@@ -346,7 +346,7 @@ def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     print("Fake tables and data creation completed!")
 
 
-def reset_fake_data(metadata: MetadataStore, data_dir: str):
+async def reset_fake_data(metadata: MetadataStore, data_dir: str):
     """Reset fake data by dropping and recreating tables"""
     if os.getenv("APP_ENV") != "dev":
         raise ValueError("This function is only available in development environment")
@@ -362,7 +362,7 @@ def reset_fake_data(metadata: MetadataStore, data_dir: str):
             print(f"Dropped table: {table_name}")
 
     # Recreate the fake data
-    create_fake_tables_and_data(metadata, data_dir)
+    await create_fake_tables_and_data(metadata, data_dir)
 
     return {"dropped_tables": dropped_tables, "recreated_tables": fake_table_names}
 

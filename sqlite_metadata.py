@@ -62,7 +62,7 @@ class SqliteMetadata(MetadataStore):
                 return None
             return item.to_database()
 
-    def create_database(self, database: Database) -> Database:
+    async def create_database(self, database: Database) -> Database:
         with Session(self.engine) as session:
             db = DatabaseModel.from_database(database)
             db.id = None

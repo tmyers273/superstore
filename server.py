@@ -242,10 +242,10 @@ async def create_table_if_needed_audit_log_items():
             ],
         )
 
-    def create_table_if_needed(metadata: MetadataStore) -> Table:
+    async def create_table_if_needed(metadata: MetadataStore) -> Table:
         database = metadata.get_database("db")
         if database is None:
-            database = metadata.create_database(Database(id=0, name="db"))
+            database = await metadata.create_database(Database(id=0, name="db"))
 
         schema = metadata.get_schema("default")
         if schema is None:
@@ -266,7 +266,7 @@ async def create_table_if_needed_audit_log_items():
 
         return table
 
-    create_table_if_needed(metadata)
+    await create_table_if_needed(metadata)
     return {"message": "Table created"}
 
 
@@ -465,7 +465,7 @@ async def databases(user: User = Depends(current_active_user)):
 async def create_sp_traffic_table(schema_name: str = "na"):
     db = metadata.get_database("db")
     if db is None:
-        db = metadata.create_database(Database(id=0, name="db"))
+        db = await metadata.create_database(Database(id=0, name="db"))
 
     schema = metadata.get_schema(schema_name)
     if schema is None:
@@ -553,7 +553,7 @@ async def reset_fake_data_endpoint(user: User = Depends(current_active_user)):
         return {"error": "DATA_DIR is not configured"}
 
     try:
-        result = reset_fake_data(metadata, data_dir)
+        result = await reset_fake_data(metadata, data_dir)
         return {"message": "Fake data reset successfully", **result}
     except Exception as e:
         return {"error": f"Failed to reset fake data: {str(e)}"}

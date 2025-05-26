@@ -11,7 +11,7 @@ from sqlite_metadata import SqliteMetadata
 class TestDropTable:
     """Test suite for table drop functionality."""
 
-    def test_drop_table_sqlite(self):
+    async def test_drop_table_sqlite(self):
         """Test dropping a table with SqliteMetadata"""
         # Create a temporary SQLite database
         with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as temp_db:
@@ -22,7 +22,9 @@ class TestDropTable:
                 metadata = SqliteMetadata(connection_string)
 
                 # Create test database, schema, and table
-                database = metadata.create_database(Database(id=0, name="test_db"))
+                database = await metadata.create_database(
+                    Database(id=0, name="test_db")
+                )
                 schema = metadata.create_schema(
                     Schema(id=0, name="test_schema", database_id=database.id)
                 )
@@ -73,12 +75,12 @@ class TestDropTable:
                 # Clean up
                 os.unlink(temp_db.name)
 
-    def test_drop_table_fake(self):
+    async def test_drop_table_fake(self):
         """Test dropping a table with FakeMetadataStore"""
         metadata = FakeMetadataStore()
 
         # Create test database, schema, and table
-        database = metadata.create_database(Database(id=0, name="test_db"))
+        database = await metadata.create_database(Database(id=0, name="test_db"))
         schema = metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=database.id)
         )
@@ -165,12 +167,12 @@ class TestDropTable:
         with pytest.raises(ValueError, match="Table nonexistent_table not found"):
             metadata.drop_table(fake_table)
 
-    def test_multiple_tables_drop_behavior(self):
+    async def test_multiple_tables_drop_behavior(self):
         """Test behavior with multiple tables where some are dropped"""
         metadata = FakeMetadataStore()
 
         # Create test database and schema
-        database = metadata.create_database(Database(id=0, name="test_db"))
+        database = await metadata.create_database(Database(id=0, name="test_db"))
         schema = metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=database.id)
         )

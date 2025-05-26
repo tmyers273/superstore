@@ -133,9 +133,13 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
         sort_keys: list[str] | None = None,
     ):
         self.metadata = metadata
+        self.partition_keys = partition_keys
+        self.sort_keys = sort_keys
+
+    async def start(self):
         self.s3 = FakeS3()
 
-        self.db = self.metadata.create_database(Database(id=0, name="test"))
+        self.db = await self.metadata.create_database(Database(id=0, name="test"))
         self.schema = self.metadata.create_schema(
             Schema(id=0, name="test", database_id=self.db.id)
         )
@@ -146,8 +150,8 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                 database_id=self.db.id,
                 schema_id=self.schema.id,
                 columns=[],
-                partition_keys=partition_keys,
-                sort_keys=sort_keys,
+                partition_keys=self.partition_keys,
+                sort_keys=self.sort_keys,
             )
         )
 
@@ -332,12 +336,13 @@ class OpGenerator:
 
 
 @pytest.mark.skip(reason="Takes too long to run")
-def test_differential_testing():
+async def test_differential_testing():
     metadata = SqliteMetadata("sqlite:///:memory:")
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerSuperstore(
         metadata, partition_keys=["account_id"], sort_keys=["id"]
     )
+    await fake.start()
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -374,11 +379,12 @@ def test_differential_testing():
             )
 
 
-def check_differential_small(metadata: MetadataStore):
+async def check_differential_small(metadata: MetadataStore):
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerSuperstore(
         metadata, partition_keys=["account_id"], sort_keys=["id"]
     )
+    await fake.start()
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -417,11 +423,11 @@ def check_differential_small(metadata: MetadataStore):
             )
 
 
-def test_differential_testing_small_fake():
+async def test_differential_testing_small_fake():
     metadata = FakeMetadataStore()
-    check_differential_small(metadata)
+    await check_differential_small(metadata)
 
 
-def test_differential_testing_small_sqlite():
+async def test_differential_testing_small_sqlite():
     metadata = SqliteMetadata("sqlite:///:memory:")
-    check_differential_small(metadata)
+    await check_differential_small(metadata)

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -20,7 +21,9 @@ class TestSqliteMetadata(unittest.TestCase):
         self.metadata = SqliteMetadata(self.connection_string)
 
         # Create test database, schema, and table
-        self.database = self.metadata.create_database(Database(id=0, name="test_db"))
+        self.database = asyncio.run(
+            self.metadata.create_database(Database(id=0, name="test_db"))
+        )
         self.schema = self.metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=self.database.id)
         )

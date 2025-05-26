@@ -10,7 +10,7 @@ from set.set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):
-    def create_database(self, database: Database) -> Database:
+    async def create_database(self, database: Database) -> Database:
         """
         Create a new database.
         """
@@ -200,7 +200,7 @@ class FakeMetadataStore(MetadataStore):
         Keyed by the table name, then the table.
         """
 
-    def create_database(self, database: Database) -> Database:
+    async def create_database(self, database: Database) -> Database:
         database.id = len(self.databases) + 1
         self.databases[database.name] = database
         return database

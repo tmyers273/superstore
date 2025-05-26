@@ -788,7 +788,7 @@ def test_stress():
         assert df.to_dicts()[0]["clicks"] == sum(i["clicks"] for i in items)
 
 
-def test_build_table_only_includes_active_micropartitions():
+async def test_build_table_only_includes_active_micropartitions():
     """
     Test that build_table only includes active micropartitions and ignores
     old/deleted micropartition files that remain on disk.
@@ -811,7 +811,7 @@ def test_build_table_only_includes_active_micropartitions():
         s3 = LocalS3(f"{temp_dir}/test-table/mps")
 
         # Create the database and schema in metadata
-        database = metadata_store.create_database(Database(id=0, name="test_db"))
+        database = await metadata_store.create_database(Database(id=0, name="test_db"))
         schema = metadata_store.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )

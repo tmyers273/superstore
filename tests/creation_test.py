@@ -4,7 +4,7 @@ from s3 import FakeS3, S3Like
 from sqlite_metadata import SqliteMetadata
 
 
-def table_creation(metadata_store: MetadataStore, s3: S3Like):
+async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     database = Database(id=0, name="my_db")
     schema = Schema(id=0, name="default", database_id=1)
     table = Table(
@@ -19,7 +19,7 @@ def table_creation(metadata_store: MetadataStore, s3: S3Like):
         ],
     )
 
-    db = metadata_store.create_database(database)
+    db = await metadata_store.create_database(database)
     schema.database_id = db.id
     schema = metadata_store.create_schema(schema)
     table.schema_id = schema.id

@@ -12,14 +12,14 @@ from ops.insert import insert
 from s3 import FakeS3, TableRegistration
 
 
-def test_single_table_registration():
+async def test_single_table_registration():
     """Test registering a single table to ensure basic functionality works."""
 
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
     # Create database and schema
-    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    database = await metadata_store.create_database(Database(id=0, name="test_db"))
     schema = metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
@@ -63,14 +63,14 @@ def test_single_table_registration():
     print("✅ Single table registration test passed!")
 
 
-def test_register_datasets_separately():
+async def test_register_datasets_separately():
     """Test registering two tables separately to see if they interfere."""
 
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
     # Create database and schema
-    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    database = await metadata_store.create_database(Database(id=0, name="test_db"))
     schema = metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
@@ -143,7 +143,7 @@ def test_register_datasets_separately():
     print("✅ Separate registration test passed!")
 
 
-def test_register_datasets_with_join():
+async def test_register_datasets_with_join():
     """Test registering multiple datasets and performing a join query."""
 
     # Set up metadata store and S3
@@ -151,7 +151,7 @@ def test_register_datasets_with_join():
     s3 = FakeS3()
 
     # Create database and schema
-    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    database = await metadata_store.create_database(Database(id=0, name="test_db"))
     schema = metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
@@ -299,14 +299,14 @@ def test_register_datasets_with_join():
     print("✅ Join query test passed!")
 
 
-def test_register_datasets_with_custom_names():
+async def test_register_datasets_with_custom_names():
     """Test registering datasets with custom table names."""
 
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
     # Create database and schema
-    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    database = await metadata_store.create_database(Database(id=0, name="test_db"))
     schema = metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
