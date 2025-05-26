@@ -151,10 +151,14 @@ async def table(
     if table is None:
         return {"error": "Table not found"}
 
+    # Create the correct S3 path for this specific table
+    table_s3_path = f"{data_dir}/{table.name}/mps"
+    table_s3 = LocalS3(table_s3_path)
+
     total_rows = 0
     total_filesize = 0
     all_mps: list[dict] = []
-    for i, mp in enumerate(metadata.micropartitions(table, s3, with_data=False)):
+    for i, mp in enumerate(metadata.micropartitions(table, table_s3, with_data=False)):
         raw = mp.model_dump()
         del raw["data"]
         stats = mp.stats
@@ -305,8 +309,12 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
     if table is None:
         return {"error": "Table not found"}
 
+    # Create the correct S3 path for this specific table
+    table_s3_path = f"{data_dir}/{table.name}/mps"
+    table_s3 = LocalS3(table_s3_path)
+
     with build_table(
-        table, metadata, s3, table_name=request.table_name, with_data=False
+        table, metadata, table_s3, table_name=request.table_name, with_data=False
     ) as ctx:
         results = ctx.sql(request.query).to_polars()
         # total = list(total.to_dicts()[0].values())[0]
