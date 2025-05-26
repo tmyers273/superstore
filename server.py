@@ -17,6 +17,7 @@ from sqlalchemy import select
 from classes import ColumnDefinitions, Database, Schema, Table
 from create_user import create_user
 from db import Base, User, engine
+from fake_data import create_fake_tables_and_data, get_fake_data_status, reset_fake_data
 from local_s3 import LocalS3
 from metadata import MetadataStore
 from sqlite_metadata import SqliteMetadata
@@ -40,6 +41,10 @@ async def create_db_and_tables():
         else:
             print("User does not exist, creating user")
             await create_user("tmyers273@gmail.com", env("USER_PASSWORD"))
+
+    # Create fake data if in development environment and tables don't exist
+    if data_dir is not None:
+        create_fake_tables_and_data(metadata, data_dir)
 
 
 @asynccontextmanager
@@ -94,6 +99,7 @@ class LoginRequest(BaseModel):
 
 @app.get("/auth/me")
 async def authenticated_route(user: User = Depends(current_active_user)):
+    # DO NOT DELETE
     user.name = "Demo User"
     return user
 
@@ -468,6 +474,53 @@ async def ingest_na_sp_traffic(limit: int = 5):
         shutil.move(file, dst)
 
     return {"message": "Table created"}
+
+
+@app.post("/dev/create-fake-data")
+async def create_fake_data_endpoint(user: User = Depends(current_active_user)):
+    """Manually trigger fake data creation (dev environment only)"""
+    if os.getenv("APP_ENV") != "dev":
+        return {"error": "This endpoint is only available in development environment"}
+
+    if data_dir is None:
+        return {"error": "DATA_DIR is not configured"}
+
+    try:
+        create_fake_tables_and_data(metadata, data_dir)
+        return {"message": "Fake tables and data created successfully"}
+    except Exception as e:
+        return {"error": f"Failed to create fake data: {str(e)}"}
+
+
+@app.delete("/dev/reset-fake-data")
+async def reset_fake_data_endpoint(user: User = Depends(current_active_user)):
+    """Reset fake data by dropping and recreating tables (dev environment only)"""
+    if os.getenv("APP_ENV") != "dev":
+        return {"error": "This endpoint is only available in development environment"}
+
+    if data_dir is None:
+        return {"error": "DATA_DIR is not configured"}
+
+    try:
+        result = reset_fake_data(metadata, data_dir)
+        return {"message": "Fake data reset successfully", **result}
+    except Exception as e:
+        return {"error": f"Failed to reset fake data: {str(e)}"}
+
+
+@app.get("/dev/fake-data-status")
+async def fake_data_status_endpoint(user: User = Depends(current_active_user)):
+    """Check the status of fake data tables (dev environment only)"""
+    if os.getenv("APP_ENV") != "dev":
+        return {"error": "This endpoint is only available in development environment"}
+
+    if data_dir is None:
+        return {"error": "DATA_DIR is not configured"}
+
+    try:
+        return get_fake_data_status(metadata, data_dir)
+    except Exception as e:
+        return {"error": f"Failed to get fake data status: {str(e)}"}
 
 
 if __name__ == "__main__":
