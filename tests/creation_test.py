@@ -34,7 +34,7 @@ async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     assert db.id == 1
     assert db.name == "my_db"
 
-    schemas = metadata_store.get_schemas()
+    schemas = await metadata_store.get_schemas()
     assert len(schemas) == 1
     assert schemas[0].id == 1
     assert schemas[0].name == "default"

@@ -70,7 +70,7 @@ class SqliteMetadata(MetadataStore):
             session.commit()
             return db.to_database()
 
-    def get_schemas(self) -> list[Schema]:
+    async def get_schemas(self) -> list[Schema]:
         with Session(self.engine) as session:
             stmt = select(SchemaModel)
             items = session.execute(stmt).scalars().all()

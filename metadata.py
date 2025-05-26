@@ -34,7 +34,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_schemas(self) -> list[Schema]:
+    async def get_schemas(self) -> list[Schema]:
         """
         Returns a list of all the schemas.
         """
@@ -216,7 +216,7 @@ class FakeMetadataStore(MetadataStore):
         self.schemas[schema.name] = schema
         return schema
 
-    def get_schemas(self) -> list[Schema]:
+    async def get_schemas(self) -> list[Schema]:
         return list(self.schemas.values())
 
     def get_schema(self, name: str) -> Schema | None:
