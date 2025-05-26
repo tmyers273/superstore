@@ -70,7 +70,7 @@ async def create_table_if_needed(metadata: MetadataStore) -> Table:
         table.database_id = database.id
         table.partition_keys = ["advertiser_id"]
         table.sort_keys = ["time_window_start"]
-        table = metadata.create_table(table)
+        table = await metadata.create_table(table)
 
     return table
 

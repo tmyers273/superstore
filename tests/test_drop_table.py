@@ -28,7 +28,7 @@ class TestDropTable:
                 schema = await metadata.create_schema(
                     Schema(id=0, name="test_schema", database_id=database.id)
                 )
-                table = metadata.create_table(
+                table = await metadata.create_table(
                     Table(
                         id=0,
                         name="test_table",
@@ -84,7 +84,7 @@ class TestDropTable:
         schema = await metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=database.id)
         )
-        table = metadata.create_table(
+        table = await metadata.create_table(
             Table(
                 id=0,
                 name="test_table",
@@ -180,7 +180,7 @@ class TestDropTable:
         # Create multiple tables
         tables = []
         for i in range(3):
-            table = metadata.create_table(
+            table = await metadata.create_table(
                 Table(
                     id=0,
                     name=f"table_{i + 1}",

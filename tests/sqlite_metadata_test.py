@@ -29,7 +29,7 @@ class TestSqliteMetadata(unittest.TestCase):
                 Schema(id=0, name="test_schema", database_id=self.database.id)
             )
         )
-        self.table = self.metadata.create_table(
+        self.table = await self.metadata.create_table(
             Table(
                 id=0,
                 name="test_table",

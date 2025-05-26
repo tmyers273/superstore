@@ -122,7 +122,7 @@ class SqliteMetadata(MetadataStore):
                 return None
             return item.to_table()
 
-    def create_table(self, table: Table) -> Table:
+    async def create_table(self, table: Table) -> Table:
         with Session(self.engine) as session:
             table_model = TableModel.from_table(table)
             table_model.id = None

@@ -143,7 +143,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
         self.schema = await self.metadata.create_schema(
             Schema(id=0, name="test", database_id=self.db.id)
         )
-        self.table = self.metadata.create_table(
+        self.table = await self.metadata.create_table(
             Table(
                 id=0,
                 name="test",

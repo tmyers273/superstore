@@ -258,11 +258,11 @@ async def create_table_if_needed_audit_log_items():
             table = get_table()
             table.schema_id = schema.id
             table.database_id = database.id
-            metadata.create_table(table)
+            await metadata.create_table(table)
 
         table = get_table()
         if metadata.get_table(table.name) is None:
-            metadata.create_table(table)
+            await metadata.create_table(table)
 
         return table
 
@@ -480,7 +480,7 @@ async def create_sp_traffic_table(schema_name: str = "na"):
         table.name = "sp_traffic"
         table.schema_id = schema.id
         table.database_id = db.id
-        metadata.create_table(table)
+        await metadata.create_table(table)
 
     return {"message": "Table created"}
 

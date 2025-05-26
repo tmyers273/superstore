@@ -25,7 +25,7 @@ async def test_single_table_registration():
     )
 
     # Create users table
-    users_table = metadata_store.create_table(
+    users_table = await metadata_store.create_table(
         Table(
             id=0,
             name="users",
@@ -76,7 +76,7 @@ async def test_register_datasets_separately():
     )
 
     # Create users table
-    users_table = metadata_store.create_table(
+    users_table = await metadata_store.create_table(
         Table(
             id=0,
             name="users",
@@ -91,7 +91,7 @@ async def test_register_datasets_separately():
     )
 
     # Create orders table
-    orders_table = metadata_store.create_table(
+    orders_table = await metadata_store.create_table(
         Table(
             id=0,
             name="orders",
@@ -157,7 +157,7 @@ async def test_register_datasets_with_join():
     )
 
     # Create users table
-    users_table = metadata_store.create_table(
+    users_table = await metadata_store.create_table(
         Table(
             id=0,
             name="users",
@@ -172,7 +172,7 @@ async def test_register_datasets_with_join():
     )
 
     # Create orders table
-    orders_table = metadata_store.create_table(
+    orders_table = await metadata_store.create_table(
         Table(
             id=0,
             name="orders",
@@ -312,7 +312,7 @@ async def test_register_datasets_with_custom_names():
     )
 
     # Create a simple table
-    table = metadata_store.create_table(
+    table = await metadata_store.create_table(
         Table(
             id=0,
             name="products",

@@ -23,7 +23,7 @@ async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     schema.database_id = db.id
     schema = await metadata_store.create_schema(schema)
     table.schema_id = schema.id
-    table = metadata_store.create_table(table)
+    table = await metadata_store.create_table(table)
 
     databases = await metadata_store.get_databases()
     assert len(databases) == 1

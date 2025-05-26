@@ -46,7 +46,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def create_table(self, table: Table) -> Table:
+    async def create_table(self, table: Table) -> Table:
         """
         Create a new table.
         """
@@ -222,7 +222,7 @@ class FakeMetadataStore(MetadataStore):
     async def get_schema(self, name: str) -> Schema | None:
         return self.schemas.get(name)
 
-    def create_table(self, table: Table) -> Table:
+    async def create_table(self, table: Table) -> Table:
         table.id = len(self.tables) + 1
         self.tables[table.name] = table
         return table

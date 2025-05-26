@@ -48,11 +48,11 @@ async def create_table_if_needed(metadata: MetadataStore) -> Table:
         table = get_table()
         table.schema_id = schema.id
         table.database_id = database.id
-        metadata.create_table(table)
+        table = await metadata.create_table(table)
 
     table = get_table()
     if metadata.get_table(table.name) is None:
-        metadata.create_table(table)
+        table = await metadata.create_table(table)
 
     return table
 

@@ -832,7 +832,7 @@ async def test_build_table_only_includes_active_micropartitions():
             ],  # Use partitioning to trigger append strategy
             sort_keys=["id"],
         )
-        table = metadata_store.create_table(table)
+        table = await metadata_store.create_table(table)
 
         # Insert initial data - all in same partition to trigger replacement
         initial_data = pl.DataFrame(

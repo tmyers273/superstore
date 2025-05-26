@@ -298,7 +298,7 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     if dev_db is None:
         dev_db = await metadata.create_database(Database(id=0, name="development"))
 
-    dev_schema = metadata.get_schema("dev_schema")
+    dev_schema = await metadata.get_schema("dev_schema")
     if dev_schema is None:
         dev_schema = await metadata.create_schema(
             Schema(id=0, name="dev_schema", database_id=dev_db.id)
@@ -326,7 +326,7 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
             sort_keys=table_config.get("sort_keys", []),
         )
 
-        created_table = metadata.create_table(table)
+        created_table = await metadata.create_table(table)
         print(f"Created table: {created_table.name}")
 
         # Generate and insert fake data
