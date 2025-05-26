@@ -179,10 +179,9 @@ class FakeMetadataStore(MetadataStore):
         """
         Keyed by table name, then all the current micro partition ids.
         """
-        self.micropartition_ids: dict[str, int] = {}
+        self.global_micropartition_id_counter: int = 0
         """
-        Used to generate new micro partition ids.
-        Keeps track of the highest id for each table.
+        Used to generate new micro partition ids globally across all tables.
         """
         self.ops: dict[str, list[SetOp]] = {}
         """
@@ -305,15 +304,9 @@ class FakeMetadataStore(MetadataStore):
         self.current_micro_partitions[table.name].extend(ids)
 
     def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
-        if table.name not in self.micropartition_ids:
-            self.micropartition_ids[table.name] = number
-            start = 1
-            end = start + number
-            return list(range(1, number + 1))
-
-        start = self.micropartition_ids[table.name] + 1
+        start = self.global_micropartition_id_counter + 1
         end = start + number
-        self.micropartition_ids[table.name] = end - 1
+        self.global_micropartition_id_counter = end - 1
         return list(range(start, end))
 
     def micropartitions(

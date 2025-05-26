@@ -1,81 +1,373 @@
 """
-Test script to demonstrate the new register_datasets functionality.
+Test script for the new register_datasets functionality.
+Tests registering multiple datasets and querying them with joins.
 """
 
+import polars as pl
 from datafusion import SessionContext
 
-from classes import ColumnDefinitions, Table
+from classes import ColumnDefinitions, Database, Schema, Table
+from metadata import FakeMetadataStore
+from ops.insert import insert
 from s3 import FakeS3, TableRegistration
 
 
-def test_register_datasets():
-    """Test the new register_datasets method with multiple tables."""
+def test_single_table_registration():
+    """Test registering a single table to ensure basic functionality works."""
 
-    # Create some test tables
-    table1 = Table(
-        id=1,
-        schema_id=1,
-        database_id=1,
-        name="events",
-        columns=[
-            ColumnDefinitions(name="id", type="Int64"),
-            ColumnDefinitions(name="event_type", type="String"),
-            ColumnDefinitions(name="timestamp", type="Timestamp"),
-        ],
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+
+    # Create database and schema
+    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    schema = metadata_store.create_schema(
+        Schema(id=0, name="test_schema", database_id=database.id)
     )
 
-    table2 = Table(
-        id=2,
-        schema_id=1,
-        database_id=1,
-        name="users",
-        columns=[
-            ColumnDefinitions(name="id", type="Int64"),
-            ColumnDefinitions(name="name", type="String"),
-            ColumnDefinitions(name="email", type="String"),
-        ],
+    # Create users table
+    users_table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="users",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="name", type="String"),
+                ColumnDefinitions(name="email", type="String"),
+            ],
+        )
     )
 
-    # Create registrations with different configurations
+    # Insert test data
+    users_data = pl.DataFrame(
+        [
+            {"id": 1, "name": "Alice", "email": "alice@example.com"},
+            {"id": 2, "name": "Bob", "email": "bob@example.com"},
+        ]
+    )
+    insert(users_table, s3, metadata_store, users_data)
+
+    # Test single registration
+    ctx = SessionContext()
+    s3.register_dataset(ctx, "users", users_table, metadata_store)
+
+    result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
+    print(f"Single table columns: {result.columns}")
+    print(f"Single table data: {result.to_dicts()}")
+
+    assert result.columns == ["id", "name", "email"]
+    assert len(result) == 2
+    assert result.to_dicts()[0]["name"] == "Alice"
+
+    print("✅ Single table registration test passed!")
+
+
+def test_register_datasets_separately():
+    """Test registering two tables separately to see if they interfere."""
+
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+
+    # Create database and schema
+    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    schema = metadata_store.create_schema(
+        Schema(id=0, name="test_schema", database_id=database.id)
+    )
+
+    # Create users table
+    users_table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="users",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="name", type="String"),
+                ColumnDefinitions(name="email", type="String"),
+            ],
+        )
+    )
+
+    # Create orders table
+    orders_table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="orders",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="user_id", type="Int64"),
+                ColumnDefinitions(name="product", type="String"),
+                ColumnDefinitions(name="amount", type="Float64"),
+            ],
+        )
+    )
+
+    # Insert test data
+    users_data = pl.DataFrame(
+        [
+            {"id": 1, "name": "Alice", "email": "alice@example.com"},
+            {"id": 2, "name": "Bob", "email": "bob@example.com"},
+        ]
+    )
+    insert(users_table, s3, metadata_store, users_data)
+
+    orders_data = pl.DataFrame(
+        [
+            {"id": 101, "user_id": 1, "product": "Laptop", "amount": 999.99},
+            {"id": 102, "user_id": 2, "product": "Mouse", "amount": 29.99},
+        ]
+    )
+    insert(orders_table, s3, metadata_store, orders_data)
+
+    # Register tables separately
+    ctx = SessionContext()
+    s3.register_dataset(ctx, "users", users_table, metadata_store)
+    s3.register_dataset(ctx, "orders", orders_table, metadata_store)
+
+    # Check each table individually
+    users_result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
+    orders_result = ctx.sql("SELECT * FROM orders ORDER BY id").to_polars()
+
+    print(f"Users columns: {users_result.columns}")
+    print(f"Orders columns: {orders_result.columns}")
+    print(f"Users data: {users_result.to_dicts()}")
+    print(f"Orders data: {orders_result.to_dicts()}")
+
+    assert users_result.columns == ["id", "name", "email"]
+    assert orders_result.columns == ["id", "user_id", "product", "amount"]
+
+    print("✅ Separate registration test passed!")
+
+
+def test_register_datasets_with_join():
+    """Test registering multiple datasets and performing a join query."""
+
+    # Set up metadata store and S3
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+
+    # Create database and schema
+    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    schema = metadata_store.create_schema(
+        Schema(id=0, name="test_schema", database_id=database.id)
+    )
+
+    # Create users table
+    users_table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="users",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="name", type="String"),
+                ColumnDefinitions(name="email", type="String"),
+            ],
+        )
+    )
+
+    # Create orders table
+    orders_table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="orders",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="user_id", type="Int64"),
+                ColumnDefinitions(name="product", type="String"),
+                ColumnDefinitions(name="amount", type="Float64"),
+            ],
+        )
+    )
+
+    # Insert test data into users table
+    users_data = pl.DataFrame(
+        [
+            {"id": 1, "name": "Alice", "email": "alice@example.com"},
+            {"id": 2, "name": "Bob", "email": "bob@example.com"},
+            {"id": 3, "name": "Charlie", "email": "charlie@example.com"},
+        ]
+    )
+    insert(users_table, s3, metadata_store, users_data)
+
+    # Insert test data into orders table
+    orders_data = pl.DataFrame(
+        [
+            {"id": 101, "user_id": 1, "product": "Laptop", "amount": 999.99},
+            {"id": 102, "user_id": 2, "product": "Mouse", "amount": 29.99},
+            {"id": 103, "user_id": 1, "product": "Keyboard", "amount": 79.99},
+            {"id": 104, "user_id": 3, "product": "Monitor", "amount": 299.99},
+            {"id": 105, "user_id": 2, "product": "Headphones", "amount": 149.99},
+        ]
+    )
+    insert(orders_table, s3, metadata_store, orders_data)
+
+    # Create registrations for both tables
     registrations = [
         TableRegistration(
-            table=table1, version=5, table_name="events_v5", included_mp_ids={1, 2, 3}
+            table=users_table,
+            table_name="users",
         ),
         TableRegistration(
-            table=table2,
-            version=None,  # Latest version
-            table_name="users_latest",
-            included_mp_ids={10, 20, 30},
-        ),
-        TableRegistration(
-            table=table1,
-            version=3,
-            # table_name will default to table.name = "events"
-            included_mp_ids={4, 5, 6},
+            table=orders_table,
+            table_name="orders",
         ),
     ]
 
-    # Create S3 instance and SessionContext
-    s3 = FakeS3()
+    # Register both datasets using the new method
     ctx = SessionContext()
+    registered_names = s3.register_datasets(ctx, registrations, metadata_store)
 
-    # This would normally be a real metadata store
-    metadata_store = None  # For demo purposes
+    # Verify the registration mapping
+    assert registered_names == {"users": "users", "orders": "orders"}
 
-    print("Registrations to process:")
-    for i, reg in enumerate(registrations):
-        table_name = reg.table_name if reg.table_name else reg.table.name
-        print(
-            f"  {i + 1}. Table: {reg.table.name}, Version: {reg.version}, "
-            f"Name: {table_name}, MP IDs: {reg.included_mp_ids}"
+    # Debug: Check what columns are available in each table
+    print("Debug: Checking table schemas...")
+    users_result = ctx.sql("SELECT * FROM users LIMIT 1").to_polars()
+    orders_result = ctx.sql("SELECT * FROM orders LIMIT 1").to_polars()
+
+    print(f"Users columns: {users_result.columns}")
+    print(f"Orders columns: {orders_result.columns}")
+    print(f"Users data sample: {users_result.to_dicts()}")
+    print(f"Orders data sample: {orders_result.to_dicts()}")
+
+    # Test the join query
+    query = """
+    SELECT 
+        u.name,
+        u.email,
+        o.product,
+        o.amount
+    FROM orders o
+    LEFT JOIN users u ON u.id = o.user_id
+    ORDER BY o.id
+    """
+
+    result = ctx.sql(query).to_polars()
+
+    # Verify the results
+    expected_results = [
+        {
+            "name": "Alice",
+            "email": "alice@example.com",
+            "product": "Laptop",
+            "amount": 999.99,
+        },
+        {
+            "name": "Bob",
+            "email": "bob@example.com",
+            "product": "Mouse",
+            "amount": 29.99,
+        },
+        {
+            "name": "Alice",
+            "email": "alice@example.com",
+            "product": "Keyboard",
+            "amount": 79.99,
+        },
+        {
+            "name": "Charlie",
+            "email": "charlie@example.com",
+            "product": "Monitor",
+            "amount": 299.99,
+        },
+        {
+            "name": "Bob",
+            "email": "bob@example.com",
+            "product": "Headphones",
+            "amount": 149.99,
+        },
+    ]
+
+    actual_results = result.to_dicts()
+    assert len(actual_results) == 5
+
+    for i, expected in enumerate(expected_results):
+        actual = actual_results[i]
+        assert actual["name"] == expected["name"]
+        assert actual["email"] == expected["email"]
+        assert actual["product"] == expected["product"]
+        assert abs(actual["amount"] - expected["amount"]) < 0.01  # Float comparison
+
+    print("✅ Join query test passed!")
+
+
+def test_register_datasets_with_custom_names():
+    """Test registering datasets with custom table names."""
+
+    metadata_store = FakeMetadataStore()
+    s3 = FakeS3()
+
+    # Create database and schema
+    database = metadata_store.create_database(Database(id=0, name="test_db"))
+    schema = metadata_store.create_schema(
+        Schema(id=0, name="test_schema", database_id=database.id)
+    )
+
+    # Create a simple table
+    table = metadata_store.create_table(
+        Table(
+            id=0,
+            name="products",
+            schema_id=schema.id,
+            database_id=database.id,
+            columns=[
+                ColumnDefinitions(name="id", type="Int64"),
+                ColumnDefinitions(name="name", type="String"),
+                ColumnDefinitions(name="price", type="Float64"),
+            ],
         )
+    )
 
-    # This would call the new method:
-    # registered_names = s3.register_datasets(ctx, registrations, metadata_store)
-    # print(f"Registered tables: {registered_names}")
+    # Insert test data
+    data = pl.DataFrame(
+        [
+            {"id": 1, "name": "Widget A", "price": 10.99},
+            {"id": 2, "name": "Widget B", "price": 15.99},
+        ]
+    )
+    insert(table, s3, metadata_store, data)
 
-    print("\nNew register_datasets method is ready to use!")
+    # Register with custom names
+    registrations = [
+        TableRegistration(
+            table=table,
+            table_name="products_v1",
+        ),
+        TableRegistration(
+            table=table,
+            table_name="products_v2",
+        ),
+    ]
+
+    ctx = SessionContext()
+    registered_names = s3.register_datasets(ctx, registrations, metadata_store)
+
+    # Verify both registrations point to the same source table
+    assert registered_names == {
+        "products": "products_v2"
+    }  # Last one wins in the mapping
+
+    # Test that both table names work in queries
+    result1 = ctx.sql("SELECT COUNT(*) as count FROM products_v1").to_polars()
+    result2 = ctx.sql("SELECT COUNT(*) as count FROM products_v2").to_polars()
+
+    assert result1.to_dicts()[0]["count"] == 2
+    assert result2.to_dicts()[0]["count"] == 2
+
+    print("✅ Custom table names test passed!")
 
 
 if __name__ == "__main__":
-    test_register_datasets()
+    test_single_table_registration()
+    test_register_datasets_separately()
+    test_register_datasets_with_join()
+    test_register_datasets_with_custom_names()
+    print("🎉 All tests passed!")
