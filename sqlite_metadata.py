@@ -48,7 +48,7 @@ class SqliteMetadata(MetadataStore):
         )
         Base.metadata.create_all(self.engine)
 
-    def get_databases(self) -> list[Database]:
+    async def get_databases(self) -> list[Database]:
         with Session(self.engine) as session:
             stmt = select(DatabaseModel)
             items = session.execute(stmt).scalars().all()

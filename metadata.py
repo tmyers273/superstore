@@ -16,7 +16,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_databases(self) -> list[Database]:
+    async def get_databases(self) -> list[Database]:
         """
         Returns a list of all the databases.
         """
@@ -205,7 +205,7 @@ class FakeMetadataStore(MetadataStore):
         self.databases[database.name] = database
         return database
 
-    def get_databases(self) -> list[Database]:
+    async def get_databases(self) -> list[Database]:
         return list(self.databases.values())
 
     def get_database(self, name: str) -> Database | None:

@@ -434,7 +434,7 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
 
 @app.get("/databases")
 async def databases(user: User = Depends(current_active_user)):
-    databases = metadata.get_databases()
+    databases = await metadata.get_databases()
     schemas = metadata.get_schemas()
     tables = metadata.get_tables()
 
