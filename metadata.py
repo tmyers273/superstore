@@ -22,13 +22,13 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_database(self, name: str) -> Database | None:
+    async def get_database(self, name: str) -> Database | None:
         """
         Returns the database with the given name.
         """
         raise NotImplementedError
 
-    def create_schema(self, schema: Schema) -> Schema:
+    async def create_schema(self, schema: Schema) -> Schema:
         """
         Create a new schema.
         """
@@ -208,10 +208,10 @@ class FakeMetadataStore(MetadataStore):
     async def get_databases(self) -> list[Database]:
         return list(self.databases.values())
 
-    def get_database(self, name: str) -> Database | None:
+    async def get_database(self, name: str) -> Database | None:
         return self.databases.get(name)
 
-    def create_schema(self, schema: Schema) -> Schema:
+    async def create_schema(self, schema: Schema) -> Schema:
         schema.id = len(self.schemas) + 1
         self.schemas[schema.name] = schema
         return schema

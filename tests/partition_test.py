@@ -10,7 +10,9 @@ from tests.run_test import delete, update
 
 async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     db = await metadata.create_database(Database(id=0, name="test_db"))
-    schema = metadata.create_schema(Schema(id=0, name="test_schema", database_id=db.id))
+    schema = await metadata.create_schema(
+        Schema(id=0, name="test_schema", database_id=db.id)
+    )
     table = metadata.create_table(
         Table(
             id=0,

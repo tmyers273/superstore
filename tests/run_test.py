@@ -812,7 +812,7 @@ async def test_build_table_only_includes_active_micropartitions():
 
         # Create the database and schema in metadata
         database = await metadata_store.create_database(Database(id=0, name="test_db"))
-        schema = metadata_store.create_schema(
+        schema = await metadata_store.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )
 

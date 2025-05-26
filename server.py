@@ -243,13 +243,13 @@ async def create_table_if_needed_audit_log_items():
         )
 
     async def create_table_if_needed(metadata: MetadataStore) -> Table:
-        database = metadata.get_database("db")
+        database = await metadata.get_database("db")
         if database is None:
             database = await metadata.create_database(Database(id=0, name="db"))
 
         schema = metadata.get_schema("default")
         if schema is None:
-            schema = metadata.create_schema(
+            schema = await metadata.create_schema(
                 Schema(id=0, name="default", database_id=database.id)
             )
 
@@ -463,13 +463,13 @@ async def databases(user: User = Depends(current_active_user)):
 
 @app.get("/create-sp-traffic-table")
 async def create_sp_traffic_table(schema_name: str = "na"):
-    db = metadata.get_database("db")
+    db = await metadata.get_database("db")
     if db is None:
         db = await metadata.create_database(Database(id=0, name="db"))
 
     schema = metadata.get_schema(schema_name)
     if schema is None:
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name=schema_name, database_id=db.id)
         )
 

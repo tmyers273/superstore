@@ -54,7 +54,7 @@ class SqliteMetadata(MetadataStore):
             items = session.execute(stmt).scalars().all()
             return [item.to_database() for item in items]
 
-    def get_database(self, name: str) -> Database | None:
+    async def get_database(self, name: str) -> Database | None:
         with Session(self.engine) as session:
             stmt = select(DatabaseModel).where(DatabaseModel.name == name)
             item = session.execute(stmt).scalars().one_or_none()
@@ -84,7 +84,7 @@ class SqliteMetadata(MetadataStore):
                 return None
             return item.to_schema()
 
-    def create_schema(self, schema: Schema) -> Schema:
+    async def create_schema(self, schema: Schema) -> Schema:
         with Session(self.engine) as session:
             schema_model = SchemaModel.from_schema(schema)
             schema_model.id = None

@@ -140,7 +140,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
         self.s3 = FakeS3()
 
         self.db = await self.metadata.create_database(Database(id=0, name="test"))
-        self.schema = self.metadata.create_schema(
+        self.schema = await self.metadata.create_schema(
             Schema(id=0, name="test", database_id=self.db.id)
         )
         self.table = self.metadata.create_table(

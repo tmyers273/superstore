@@ -20,7 +20,7 @@ async def test_single_table_registration():
 
     # Create database and schema
     database = await metadata_store.create_database(Database(id=0, name="test_db"))
-    schema = metadata_store.create_schema(
+    schema = await metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
 
@@ -71,7 +71,7 @@ async def test_register_datasets_separately():
 
     # Create database and schema
     database = await metadata_store.create_database(Database(id=0, name="test_db"))
-    schema = metadata_store.create_schema(
+    schema = await metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
 
@@ -152,7 +152,7 @@ async def test_register_datasets_with_join():
 
     # Create database and schema
     database = await metadata_store.create_database(Database(id=0, name="test_db"))
-    schema = metadata_store.create_schema(
+    schema = await metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
 
@@ -307,7 +307,7 @@ async def test_register_datasets_with_custom_names():
 
     # Create database and schema
     database = await metadata_store.create_database(Database(id=0, name="test_db"))
-    schema = metadata_store.create_schema(
+    schema = await metadata_store.create_schema(
         Schema(id=0, name="test_schema", database_id=database.id)
     )
 

@@ -25,7 +25,7 @@ class TestDropTable:
                 database = await metadata.create_database(
                     Database(id=0, name="test_db")
                 )
-                schema = metadata.create_schema(
+                schema = await metadata.create_schema(
                     Schema(id=0, name="test_schema", database_id=database.id)
                 )
                 table = metadata.create_table(
@@ -81,7 +81,7 @@ class TestDropTable:
 
         # Create test database, schema, and table
         database = await metadata.create_database(Database(id=0, name="test_db"))
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=database.id)
         )
         table = metadata.create_table(
@@ -173,7 +173,7 @@ class TestDropTable:
 
         # Create test database and schema
         database = await metadata.create_database(Database(id=0, name="test_db"))
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name="test_schema", database_id=database.id)
         )
 

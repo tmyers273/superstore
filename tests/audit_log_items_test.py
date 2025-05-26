@@ -33,13 +33,13 @@ def get_table() -> Table:
 
 
 async def create_table_if_needed(metadata: MetadataStore) -> Table:
-    database = metadata.get_database("db")
+    database = await metadata.get_database("db")
     if database is None:
         database = await metadata.create_database(Database(id=0, name="db"))
 
     schema = metadata.get_schema("default")
     if schema is None:
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )
 

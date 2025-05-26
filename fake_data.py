@@ -294,13 +294,13 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     print("Creating fake tables and data for development...")
 
     # Create development database and schema
-    dev_db = metadata.get_database("development")
+    dev_db = await metadata.get_database("development")
     if dev_db is None:
         dev_db = await metadata.create_database(Database(id=0, name="development"))
 
     dev_schema = metadata.get_schema("dev_schema")
     if dev_schema is None:
-        dev_schema = metadata.create_schema(
+        dev_schema = await metadata.create_schema(
             Schema(id=0, name="dev_schema", database_id=dev_db.id)
         )
 
