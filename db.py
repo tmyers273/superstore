@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
-from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -152,7 +152,16 @@ class TableModel(Base):
         String, nullable=False, default=TableStatus.ACTIVE.value
     )
 
-    __table_args__ = (UniqueConstraint("database_id", "schema_id", "name"),)
+    __table_args__ = (
+        Index(
+            "ix_unique_active_table_name",
+            "database_id",
+            "schema_id",
+            "name",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
 
     @classmethod
     def from_table(cls, table: Table) -> "TableModel":

@@ -64,6 +64,14 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
+    def get_table_by_id(
+        self, table_id: int, include_dropped: bool = False
+    ) -> Table | None:
+        """
+        Returns the table with the given ID.
+        """
+        raise NotImplementedError
+
     def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
@@ -233,6 +241,15 @@ class FakeMetadataStore(MetadataStore):
         if not include_dropped and table.status != TableStatus.ACTIVE:
             return None
         return table
+
+    def get_table_by_id(
+        self, table_id: int, include_dropped: bool = False
+    ) -> Table | None:
+        for table in self.tables.values():
+            if table.id == table_id:
+                if include_dropped or table.status == TableStatus.ACTIVE:
+                    return table
+        return None
 
     def drop_table(self, table: Table) -> Table:
         """

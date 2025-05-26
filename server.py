@@ -104,16 +104,16 @@ async def login(request: LoginRequest):
     return {"user": {"id": 1, "name": "Demo User", "email": request.email}}
 
 
-@app.delete("/table/{table_name}")
-async def drop_table(table_name: str, user: User = Depends(current_active_user)):
-    table = metadata.get_table(table_name)
+@app.delete("/table/{table_id}")
+async def drop_table(table_id: int, user: User = Depends(current_active_user)):
+    table = metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 
     try:
         dropped_table = metadata.drop_table(table)
         return {
-            "message": f"Table '{table_name}' has been dropped",
+            "message": f"Table '{table.name}' has been dropped",
             "table": dropped_table.model_dump(),
         }
     except ValueError as e:
@@ -141,7 +141,7 @@ async def table(
     user: User = Depends(current_active_user),
 ):
     print(metadata.get_tables())
-    table = metadata.get_table(table_name)
+    table = metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 

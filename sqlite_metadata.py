@@ -110,6 +110,18 @@ class SqliteMetadata(MetadataStore):
                 return None
             return item.to_table()
 
+    def get_table_by_id(
+        self, table_id: int, include_dropped: bool = False
+    ) -> Table | None:
+        with Session(self.engine) as session:
+            stmt = select(TableModel).where(TableModel.id == table_id)
+            if not include_dropped:
+                stmt = stmt.where(TableModel.status == TableStatus.ACTIVE.value)
+            item = session.execute(stmt).scalars().one_or_none()
+            if item is None:
+                return None
+            return item.to_table()
+
     def create_table(self, table: Table) -> Table:
         with Session(self.engine) as session:
             table_model = TableModel.from_table(table)
