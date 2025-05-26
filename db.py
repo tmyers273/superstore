@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -10,7 +11,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from classes import Database, Schema, Table, TableStatus
 from set.set_ops import SetOp, SetOpAdd, SetOpDelete, SetOpDeleteAndAdd, SetOpReplace
 
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Make DATABASE_URL configurable via environment variables
+DATA_DIR = os.getenv("DATA_DIR", ".")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/test.db")
 
 
 class Base(DeclarativeBase):

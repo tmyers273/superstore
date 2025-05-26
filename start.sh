@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e  # Exit immediately if any command fails
 
+echo "Running database migrations..."
+# Run Alembic migrations to ensure database is up to date
+uv run alembic upgrade head
+
 # Get number of workers from environment variable, default to 1 for debugging
 WORKERS=${UVICORN_WORKER_COUNT:-1}
 

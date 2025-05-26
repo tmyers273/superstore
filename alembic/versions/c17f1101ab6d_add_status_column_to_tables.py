@@ -1,8 +1,8 @@
 """Add status column to tables
 
-Revision ID: 95474e057647
-Revises:
-Create Date: 2025-05-26 08:31:54.807005
+Revision ID: c17f1101ab6d
+Revises: 4aee20fc87fb
+Create Date: 2025-05-26 08:40:18.866699
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "95474e057647"
-down_revision: Union[str, None] = None
+revision: str = "c17f1101ab6d"
+down_revision: Union[str, None] = "4aee20fc87fb"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
