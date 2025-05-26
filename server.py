@@ -10,7 +10,7 @@ import polars as pl
 import uvicorn
 from datafusion import SessionContext
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -358,7 +358,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
         out = results.slice(skip, request.per_page).to_dicts()
 
     except Exception as e:
-        return {"error": f"Query execution failed: {str(e)}"}
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
 
     dur = perf_counter() - s
 

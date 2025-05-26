@@ -26,7 +26,7 @@ target_metadata = Base.metadata
 
 # Get database URL from environment variables, same as the main application
 DATA_DIR = os.getenv("DATA_DIR", ".")
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR}/test.db")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR}/db.db")
 
 print(f"DATABASE_URL: {DATABASE_URL}")
 # Override the sqlalchemy.url from alembic.ini with our environment-based URL
