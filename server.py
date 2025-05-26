@@ -297,6 +297,7 @@ async def audit_log_items_total():
 
 class ExecuteRequest(BaseModel):
     table_name: str
+    """A string of table names, optionally separated by commas"""
     query: str
     page: int = 1
     per_page: int = 30
