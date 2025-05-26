@@ -7,8 +7,6 @@ from datetime import datetime, timedelta
 from time import perf_counter
 
 import polars as pl
-import pyarrow as pa
-import pyarrow.dataset as ds
 import pytest
 from datafusion import SessionContext
 
@@ -496,99 +494,18 @@ def build_table(
 ):
     ctx = SessionContext()
 
-    match s3:
-        case FakeS3():
-            with tempfile.TemporaryDirectory() as tmpdir:
-                for p in metadata_store.micropartitions(
-                    table, s3, version=version, with_data=with_data
-                ):
-                    if included_mp_ids is not None and p.id not in included_mp_ids:
-                        continue
-                    path = os.path.join(tmpdir, f"{p.id}.parquet")
-                    p.dump().write_parquet(path)
+    s3.register_dataset(
+        ctx=ctx,
+        table_name=table_name,
+        table=table,
+        metadata_store=metadata_store,
+        version=version,
+        with_data=with_data,
+        included_mp_ids=included_mp_ids,
+        paths=paths,
+    )
 
-                dataset = ds.dataset(tmpdir, format="parquet")
-                ctx.register_dataset(table_name, dataset)
-                yield ctx
-        case LocalS3():
-            if paths is None:
-                wanted_ids = []
-                s = perf_counter()
-
-                if included_mp_ids is None:
-                    ids = metadata_store._get_ids(table, version)
-                    for id in ids:
-                        if included_mp_ids is not None and id not in included_mp_ids:
-                            continue
-                        wanted_ids.append(id)
-                else:
-                    wanted_ids = list(included_mp_ids)
-
-                e = perf_counter()
-                print(
-                    f"    Time to get {len(wanted_ids)} wanted ids: {(e - s) * 1000} ms"
-                )
-
-                data_dir = os.getenv("DATA_DIR")
-                if data_dir is None:
-                    raise ValueError("DATA_DIR is not set")
-                base_dir = os.path.join(data_dir, table.name, "mps/bucket")
-
-                # Only include files that correspond to wanted micropartition IDs
-                paths = []
-                for root, _, files in os.walk(base_dir):
-                    for file in files:
-                        if file.endswith(".parquet"):
-                            # Extract the micropartition ID from the filename
-                            # The filename should be {id}.parquet
-                            filename_without_ext = os.path.splitext(file)[0]
-                            try:
-                                mp_id = int(filename_without_ext)
-                                if mp_id in wanted_ids:
-                                    paths.append(os.path.join(root, file))
-                            except ValueError:
-                                # Skip files that don't have numeric names
-                                continue
-
-            s = perf_counter()
-            dataset = ds.dataset(
-                paths,
-                format="parquet",
-                partitioning=ds.partitioning(
-                    pa.schema([pa.field("advertiser_id", pa.large_string())]),
-                    flavor="hive",
-                ),
-            )
-            e = perf_counter()
-            print(f"    Time to create dataset: {(e - s) * 1000} ms")
-            s = perf_counter()
-            ctx.register_dataset(table_name, dataset)
-            e = perf_counter()
-            print(f"    Time to register dataset: {(e - s) * 1000} ms")
-            yield ctx
-        case _:
-            raise ValueError(f"Unsupported S3 type: {type(s3)}")
-
-    # allowed = {169, 170, 171}
-    # with tempfile.TemporaryDirectory() as tmpdir:
-    # for p in metadata_store.micropartitions(table, s3, version=version):
-    #     path = os.path.join(tmpdir, f"{p.id}.parquet")
-    #     p.dump().write_parquet(path)
-
-    # wanted_ids = []
-    # for p in metadata_store.micropartitions(table, s3, version=version):
-    #     # path = os.path.join(tmpdir, f"{p.id}.parquet")
-    #     # p.dump().write_parquet(path)
-    #     wanted_ids.append(p.id)
-
-
-# base_dir = "ams_scratch/mps/bucket"
-# paths = [f"{base_dir}/{i}.parquet" for i in wanted_ids]
-# dataset = ds.dataset(paths, format="parquet")
-# ctx.register_dataset(table_name, dataset)
-
-# # ctx.register_parquet(table_name, tmpdir)
-# yield ctx
+    yield ctx
 
 
 def simple_insert(metadata_store: MetadataStore, s3: S3Like):
@@ -879,7 +796,6 @@ def test_build_table_only_includes_active_micropartitions():
     This test reproduces the bug where build_table was including ALL parquet
     files in the directory instead of only the active ones tracked by metadata.
     """
-    import tempfile
 
     # Use a temporary directory for this test
     with tempfile.TemporaryDirectory() as temp_dir:
