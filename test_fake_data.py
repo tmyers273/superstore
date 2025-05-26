@@ -65,7 +65,7 @@ def test_table_creation():
 
     # Initialize metadata store
     data_dir = os.environ["DATA_DIR"]
-    db_path = f"sqlite:///{data_dir}/test.db"
+    db_path = f"sqlite:///{data_dir}/db.db"
 
     metadata = SqliteMetadata(db_path)
 

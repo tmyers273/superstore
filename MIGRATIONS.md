@@ -6,7 +6,7 @@ This project uses Alembic for database schema migrations. Migrations are automat
 
 1. **Environment Configuration**: The database URL is configured via environment variables:
    - `DATA_DIR`: Directory where the database file will be stored (defaults to ".")
-   - `DATABASE_URL`: Full database URL (defaults to `sqlite+aiosqlite:///{DATA_DIR}/test.db`)
+   - `DATABASE_URL`: Full database URL (defaults to `sqlite+aiosqlite:///{DATA_DIR}/db.db`)
 
 2. **Automatic Migration on Deploy**: The `start.sh` script runs `alembic upgrade head` before starting the server, ensuring the database schema is always up to date.
 
@@ -39,4 +39,4 @@ uv run alembic current
 - `DATA_DIR=/data` (set in Docker)
 - `DATABASE_URL` (automatically constructed from DATA_DIR if not set)
 
-The migrations will create the database file at `{DATA_DIR}/test.db` and ensure all tables are created with the correct schema. 
+The migrations will create the database file at `{DATA_DIR}/db.db` and ensure all tables are created with the correct schema. 

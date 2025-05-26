@@ -807,7 +807,7 @@ def test_build_table_only_includes_active_micropartitions():
         os.makedirs(table_dir, exist_ok=True)
 
         # Use LocalS3 and SqliteMetadata
-        metadata_store = SqliteMetadata(f"sqlite:///{temp_dir}/test.db")
+        metadata_store = SqliteMetadata(f"sqlite:///{temp_dir}/db.db")
         s3 = LocalS3(f"{temp_dir}/test-table/mps")
 
         # Create the database and schema in metadata
