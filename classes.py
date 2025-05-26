@@ -1,9 +1,21 @@
 import datetime
 import io
-from typing import List
+from enum import Enum
+from typing import List, TypeVar
 
 import polars as pl
 from pydantic import BaseModel, field_validator
+
+T = TypeVar("T")
+
+
+class TableStatus(str, Enum):
+    """
+    Enum representing the status of a table.
+    """
+
+    ACTIVE = "active"
+    DROPPED = "dropped"
 
 
 class Header(BaseModel):
@@ -14,7 +26,7 @@ class Column(BaseModel):
     data: bytes
 
 
-class ColumnStatistics[T](BaseModel):
+class ColumnStatistics(BaseModel):
     index: int
     name: str
     min: T
@@ -31,16 +43,15 @@ class Statistics(BaseModel):
 
     @classmethod
     def from_bytes(cls, buffer: io.BytesIO | bytes) -> "Statistics":
-        match buffer:
-            case io.BytesIO():
-                buffer.seek(0)
-                df = pl.read_parquet(buffer)
-                length = buffer.seek(0, io.SEEK_END)
-            case bytes():
-                df = pl.read_parquet(buffer)
-                length = len(buffer)
-            case _:
-                raise ValueError(f"Invalid buffer type: {type(buffer)}")
+        if isinstance(buffer, io.BytesIO):
+            buffer.seek(0)
+            df = pl.read_parquet(buffer)
+            length = buffer.seek(0, io.SEEK_END)
+        elif isinstance(buffer, bytes):
+            df = pl.read_parquet(buffer)
+            length = len(buffer)
+        else:
+            raise ValueError(f"Invalid buffer type: {type(buffer)}")
 
         stats = cls.from_df(df)
         stats.filesize = length
@@ -81,16 +92,10 @@ class Statistics(BaseModel):
         for i, col in enumerate(df.columns):
             min = stats[f"{col}_min"]
             max = stats[f"{col}_max"]
-            match min:
-                case datetime.date():
-                    min = str(min)
-                case _:
-                    pass
-            match max:
-                case datetime.date():
-                    max = str(max)
-                case _:
-                    pass
+            if isinstance(min, datetime.date):
+                min = str(min)
+            if isinstance(max, datetime.date):
+                max = str(max)
 
             cols.append(
                 ColumnStatistics(
@@ -181,6 +186,11 @@ class Table(BaseModel):
     
     The ideal end state after maintenance is that all MPs are
     totally ordered by the sort keys.
+    """
+    status: TableStatus = TableStatus.ACTIVE
+    """
+    Status of the table. Can be "active" or "dropped".
+    Dropped tables are preserved for historical purposes but are not visible in normal operations.
     """
 
     @field_validator("sort_keys")

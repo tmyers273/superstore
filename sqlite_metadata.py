@@ -10,7 +10,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
-from classes import Database, Header, MicroPartition, Schema, Statistics, Table
+from classes import (
+    Database,
+    Header,
+    MicroPartition,
+    Schema,
+    Statistics,
+    Table,
+    TableStatus,
+)
 from db import (
     Base,
     DatabaseModel,
@@ -84,15 +92,19 @@ class SqliteMetadata(MetadataStore):
             session.commit()
             return schema_model.to_schema()
 
-    def get_tables(self) -> list[Table]:
+    def get_tables(self, include_dropped: bool = False) -> list[Table]:
         with Session(self.engine) as session:
             stmt = select(TableModel)
+            if not include_dropped:
+                stmt = stmt.where(TableModel.status == TableStatus.ACTIVE.value)
             items = session.execute(stmt).scalars().all()
             return [item.to_table() for item in items]
 
-    def get_table(self, name: str) -> Table | None:
+    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         with Session(self.engine) as session:
             stmt = select(TableModel).where(TableModel.name == name)
+            if not include_dropped:
+                stmt = stmt.where(TableModel.status == TableStatus.ACTIVE.value)
             item = session.execute(stmt).scalars().one_or_none()
             if item is None:
                 return None
@@ -105,6 +117,28 @@ class SqliteMetadata(MetadataStore):
             session.add(table_model)
             session.commit()
             return table_model.to_table()
+
+    def drop_table(self, table: Table) -> Table:
+        """
+        Drop a table by changing its status to 'dropped'.
+        This preserves all operations and micropartitions for historical purposes.
+        """
+        with Session(self.engine) as session:
+            stmt = (
+                update(TableModel)
+                .where(TableModel.id == table.id)
+                .values(status=TableStatus.DROPPED.value)
+            )
+            result = session.execute(stmt)
+            if result.rowcount == 0:
+                raise ValueError(f"Table with id {table.id} not found")
+
+            session.commit()
+
+            # Return the updated table
+            updated_table = table.model_copy()
+            updated_table.status = TableStatus.DROPPED
+            return updated_table
 
     def get_stats(
         self, table: Table, s3: S3Like, version: int | None = None

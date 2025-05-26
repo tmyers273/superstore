@@ -7,7 +7,7 @@ from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from classes import Database, Schema, Table
+from classes import Database, Schema, Table, TableStatus
 from set.set_ops import SetOp, SetOpAdd, SetOpDelete, SetOpDeleteAndAdd, SetOpReplace
 
 DATABASE_URL = "sqlite+aiosqlite:///./test.db"
@@ -145,6 +145,9 @@ class TableModel(Base):
     )
     partition_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     sort_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default=TableStatus.ACTIVE.value
+    )
 
     __table_args__ = (UniqueConstraint("database_id", "schema_id", "name"),)
 
@@ -157,6 +160,7 @@ class TableModel(Base):
             database_id=table.database_id,
             partition_keys=table.partition_keys,
             sort_keys=table.sort_keys,
+            status=table.status.value,
         )
 
     def to_table(self) -> Table:
@@ -169,6 +173,7 @@ class TableModel(Base):
             columns=[],
             partition_keys=self.partition_keys,
             sort_keys=self.sort_keys,
+            status=TableStatus(self.status),
         )
 
 

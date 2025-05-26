@@ -2,7 +2,7 @@ from typing import Generator, Protocol
 
 import polars as pl
 
-from classes import Database, MicroPartition, Schema, Table
+from classes import Database, MicroPartition, Schema, Table, TableStatus
 from repositories.fake_version_repository import FakeVersionRepository
 from repositories.version_repository import VersionRepository
 from s3 import S3Like
@@ -52,15 +52,22 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_tables(self) -> list[Table]:
+    def get_tables(self, include_dropped: bool = False) -> list[Table]:
         """
         Returns a list of all the tables.
         """
         raise NotImplementedError
 
-    def get_table(self, name: str) -> Table | None:
+    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         """
         Returns the table with the given name.
+        """
+        raise NotImplementedError
+
+    def drop_table(self, table: Table) -> Table:
+        """
+        Drop a table by changing its status to 'dropped'.
+        This preserves all operations and micropartitions for historical purposes.
         """
         raise NotImplementedError
 
@@ -213,11 +220,32 @@ class FakeMetadataStore(MetadataStore):
         self.tables[table.name] = table
         return table
 
-    def get_tables(self) -> list[Table]:
-        return list(self.tables.values())
+    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+        tables = list(self.tables.values())
+        if not include_dropped:
+            tables = [t for t in tables if t.status == TableStatus.ACTIVE]
+        return tables
 
-    def get_table(self, name: str) -> Table | None:
-        return self.tables.get(name)
+    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+        table = self.tables.get(name)
+        if table is None:
+            return None
+        if not include_dropped and table.status != TableStatus.ACTIVE:
+            return None
+        return table
+
+    def drop_table(self, table: Table) -> Table:
+        """
+        Drop a table by changing its status to 'dropped'.
+        This preserves all operations and micropartitions for historical purposes.
+        """
+        if table.name not in self.tables:
+            raise ValueError(f"Table {table.name} not found")
+
+        updated_table = table.model_copy()
+        updated_table.status = TableStatus.DROPPED
+        self.tables[table.name] = updated_table
+        return updated_table
 
     def get_op(self, table: Table, version: int) -> SetOp | None:
         if table.name not in self.ops:
