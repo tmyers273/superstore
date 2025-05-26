@@ -23,7 +23,7 @@ fi
 echo "Deploying ${REGISTRY}:${TAG} to ${NEW_COLOR} environment..."
 
 # Pull new image
-docker compose pull "${NEW_COLOR}-web"
+docker compose pull "${NEW_COLOR}-web" "superstore-frontend"
 
 # Deploy new version
 docker compose up --detach --wait --no-deps "${NEW_COLOR}-web" "superstore-frontend"
