@@ -8,6 +8,7 @@ from time import perf_counter
 
 import polars as pl
 import uvicorn
+from datafusion import SessionContext
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,7 @@ from db import Base, User, engine
 from fake_data import create_fake_tables_and_data, get_fake_data_status, reset_fake_data
 from local_s3 import LocalS3
 from metadata import MetadataStore
+from s3 import TableRegistration
 from sqlite_metadata import SqliteMetadata
 from tests import ams_test
 from tests.ams_test import get_parquet_files
@@ -296,8 +298,8 @@ async def audit_log_items_total():
 
 
 class ExecuteRequest(BaseModel):
-    table_name: str
-    """A string of table names, optionally separated by commas"""
+    table_names: list[str] | str
+    """A list of table names or a single table name string. If string with commas, will be split."""
     query: str
     page: int = 1
     per_page: int = 30
@@ -306,23 +308,57 @@ class ExecuteRequest(BaseModel):
 @app.post("/execute")
 async def execute(request: ExecuteRequest, user: User = Depends(current_active_user)):
     s = perf_counter()
-    table = metadata.get_table(request.table_name)
-    if table is None:
-        return {"error": "Table not found"}
 
-    # Create the correct S3 path for this specific table
-    table_s3_path = f"{data_dir}/{table.name}/mps"
-    table_s3 = LocalS3(table_s3_path)
+    # Parse table names - handle both string and list formats
+    if isinstance(request.table_names, str):
+        # Split by comma if it's a string
+        table_names = [name.strip() for name in request.table_names.split(",")]
+    else:
+        table_names = request.table_names
 
-    with build_table(
-        table, metadata, table_s3, table_name=request.table_name, with_data=False
-    ) as ctx:
+    if not table_names:
+        return {"error": "No table names provided"}
+
+    # Get all requested tables and validate they exist
+    tables = []
+    for table_name in table_names:
+        table = metadata.get_table(table_name)
+        if table is None:
+            return {"error": f"Table '{table_name}' not found"}
+        tables.append(table)
+
+    # Create registrations for all tables
+    registrations = []
+    for table in tables:
+        registrations.append(
+            TableRegistration(
+                table=table,
+                table_name=table.name,  # Use the table's actual name
+                # Don't pass paths - let register_dataset find the files automatically
+            )
+        )
+
+    # Create a base S3 instance - the register_datasets method will handle
+    # creating the correct LocalS3 instances for each table's path
+    base_s3_path = f"{data_dir}/base/mps"  # This won't be used directly
+    s3_instance = LocalS3(base_s3_path)
+
+    # Register all datasets and execute the query
+    ctx = SessionContext()
+
+    try:
+        registered_names = s3_instance.register_datasets(
+            ctx, registrations, metadata, with_data=False
+        )
+
+        # Execute the query
         results = ctx.sql(request.query).to_polars()
-        # total = list(total.to_dicts()[0].values())[0]
-        # print("TOTAL", total)
 
         skip = (request.page - 1) * request.per_page
         out = results.slice(skip, request.per_page).to_dicts()
+
+    except Exception as e:
+        return {"error": f"Query execution failed: {str(e)}"}
 
     dur = perf_counter() - s
 
@@ -331,6 +367,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
             "rows": out,
             "columns": results.columns,
             "query": request.query,
+            "registered_tables": registered_names,
         },
         "total": results.height,
         "page": request.page,
