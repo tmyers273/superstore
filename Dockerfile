@@ -31,7 +31,6 @@ VOLUME /done
 EXPOSE 8000
 
 # Copy and prepare start script
-COPY .env .
 COPY start.sh .
 RUN chmod +x start.sh
 CMD ["uv", "run", "./start.sh"]
