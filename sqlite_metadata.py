@@ -76,7 +76,7 @@ class SqliteMetadata(MetadataStore):
             items = session.execute(stmt).scalars().all()
             return [item.to_schema() for item in items]
 
-    def get_schema(self, name: str) -> Schema | None:
+    async def get_schema(self, name: str) -> Schema | None:
         with Session(self.engine) as session:
             stmt = select(SchemaModel).where(SchemaModel.name == name)
             item = session.execute(stmt).scalars().one_or_none()

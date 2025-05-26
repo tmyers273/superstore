@@ -40,7 +40,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_schema(self, name: str) -> Schema | None:
+    async def get_schema(self, name: str) -> Schema | None:
         """
         Returns the schema with the given name.
         """
@@ -219,7 +219,7 @@ class FakeMetadataStore(MetadataStore):
     async def get_schemas(self) -> list[Schema]:
         return list(self.schemas.values())
 
-    def get_schema(self, name: str) -> Schema | None:
+    async def get_schema(self, name: str) -> Schema | None:
         return self.schemas.get(name)
 
     def create_table(self, table: Table) -> Table:

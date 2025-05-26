@@ -38,7 +38,7 @@ async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     assert len(schemas) == 1
     assert schemas[0].id == 1
     assert schemas[0].name == "default"
-    schema_obj = metadata_store.get_schema("default")
+    schema_obj = await metadata_store.get_schema("default")
     assert schema_obj is not None
     assert schema_obj.id == 1
     assert schema_obj.name == "default"
@@ -53,13 +53,13 @@ async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     assert table_obj.name == "users"
 
 
-def test_table_creation_fake():
+async def test_table_creation_fake():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
-    table_creation(metadata_store, s3)
+    await table_creation(metadata_store, s3)
 
 
-def test_table_creation_sqlite():
+async def test_table_creation_sqlite():
     metadata_store = SqliteMetadata("sqlite:///:memory:")
     s3 = FakeS3()
-    table_creation(metadata_store, s3)
+    await table_creation(metadata_store, s3)

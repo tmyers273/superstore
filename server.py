@@ -247,7 +247,7 @@ async def create_table_if_needed_audit_log_items():
         if database is None:
             database = await metadata.create_database(Database(id=0, name="db"))
 
-        schema = metadata.get_schema("default")
+        schema = await metadata.get_schema("default")
         if schema is None:
             schema = await metadata.create_schema(
                 Schema(id=0, name="default", database_id=database.id)
@@ -467,7 +467,7 @@ async def create_sp_traffic_table(schema_name: str = "na"):
     if db is None:
         db = await metadata.create_database(Database(id=0, name="db"))
 
-    schema = metadata.get_schema(schema_name)
+    schema = await metadata.get_schema(schema_name)
     if schema is None:
         schema = await metadata.create_schema(
             Schema(id=0, name=schema_name, database_id=db.id)
