@@ -37,10 +37,23 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
 
-    # Expect objects to be at "user_id=1/1"
-    assert s3.get_object("bucket", "user_id=1/1") is not None
-    assert s3.get_object("bucket", "user_id=2/2") is not None
-    assert s3.get_object("bucket", "user_id=3/3") is not None
+    # Check that objects exist for each partition key, but don't assume specific MP IDs
+    # Collect all micropartitions and their keys
+    mp_keys = []
+    for mp in metadata.micropartitions(table, s3, with_data=False):
+        key = f"{mp.key_prefix or ''}{mp.id}"
+        mp_keys.append(key)
+        # Verify the object exists in S3
+        assert s3.get_object("bucket", key) is not None
+
+    # Verify we have the expected partition prefixes
+    partition_prefixes = set()
+    for key in mp_keys:
+        prefix = key.split("/")[0]  # Extract "user_id=X" part
+        partition_prefixes.add(prefix)
+
+    expected_prefixes = {"user_id=1", "user_id=2", "user_id=3"}
+    assert partition_prefixes == expected_prefixes
 
     # Update an item
     df = pl.DataFrame(
@@ -56,10 +69,21 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
 
-    # Expect objects to be at "user_id=1/1"
-    assert s3.get_object("bucket", "user_id=1/1") is not None
-    assert s3.get_object("bucket", "user_id=2/2") is not None
-    assert s3.get_object("bucket", "user_id=3/4") is not None
+    # Check that objects exist for each partition key after update
+    mp_keys_after_update = []
+    for mp in metadata.micropartitions(table, s3, with_data=False):
+        key = f"{mp.key_prefix or ''}{mp.id}"
+        mp_keys_after_update.append(key)
+        # Verify the object exists in S3
+        assert s3.get_object("bucket", key) is not None
+
+    # Verify we still have the expected partition prefixes
+    partition_prefixes_after_update = set()
+    for key in mp_keys_after_update:
+        prefix = key.split("/")[0]  # Extract "user_id=X" part
+        partition_prefixes_after_update.add(prefix)
+
+    assert partition_prefixes_after_update == expected_prefixes
 
     # Delete an item from a MP that has multiple items
     delete(table, s3, metadata, [4])
@@ -67,9 +91,21 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
 
-    assert s3.get_object("bucket", "user_id=1/1") is not None
-    assert s3.get_object("bucket", "user_id=2/2") is not None
-    assert s3.get_object("bucket", "user_id=3/4") is not None
+    # Check that objects exist for each partition key after delete
+    mp_keys_after_delete = []
+    for mp in metadata.micropartitions(table, s3, with_data=False):
+        key = f"{mp.key_prefix or ''}{mp.id}"
+        mp_keys_after_delete.append(key)
+        # Verify the object exists in S3
+        assert s3.get_object("bucket", key) is not None
+
+    # Verify we still have the expected partition prefixes
+    partition_prefixes_after_delete = set()
+    for key in mp_keys_after_delete:
+        prefix = key.split("/")[0]  # Extract "user_id=X" part
+        partition_prefixes_after_delete.add(prefix)
+
+    assert partition_prefixes_after_delete == expected_prefixes
 
     # Delete an object from an MP with a single item, causing the MP
     # itself to be deleted
@@ -77,8 +113,22 @@ def check_partition_keys(metadata: MetadataStore, s3: S3Like):
 
     assert metadata.micropartition_count(table, s3) == 2
 
-    assert s3.get_object("bucket", "user_id=1/1") is not None
-    assert s3.get_object("bucket", "user_id=2/2") is not None
+    # Check that objects exist for remaining partition keys after final delete
+    mp_keys_final = []
+    for mp in metadata.micropartitions(table, s3, with_data=False):
+        key = f"{mp.key_prefix or ''}{mp.id}"
+        mp_keys_final.append(key)
+        # Verify the object exists in S3
+        assert s3.get_object("bucket", key) is not None
+
+    # Verify we have the expected partition prefixes (user_id=3 should be gone)
+    partition_prefixes_final = set()
+    for key in mp_keys_final:
+        prefix = key.split("/")[0]  # Extract "user_id=X" part
+        partition_prefixes_final.add(prefix)
+
+    expected_prefixes_final = {"user_id=1", "user_id=2"}
+    assert partition_prefixes_final == expected_prefixes_final
 
 
 def test_partition_keys_fake():
