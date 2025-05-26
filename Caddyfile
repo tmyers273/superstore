@@ -9,27 +9,20 @@
         level DEBUG
     }
 
-    @allowed remote_ip 108.171.206.146 \
-                   127.0.0.1 ::1      # host loopback (IPv4 + IPv6) \
-                   172.17.0.0/16      # default docker0 bridge \
-                   172.20.0.0/16      # your webgateway subnet
+    reverse_proxy {
+        to superstore-frontend:80
 
-    handle @allowed {
-        reverse_proxy {
-            to superstore-frontend:80
+        health_uri /
+        health_interval 5s
+        health_timeout 2s
+        health_status 200
 
-            health_uri /
-            health_interval 5s
-            health_timeout 2s
-            health_status 200
+        lb_policy round_robin
+        lb_retries 3
+        fail_duration 10s
 
-            lb_policy round_robin
-            lb_retries 3
-            fail_duration 10s
-
-            transport http {
-                keepalive off
-            }
+        transport http {
+            keepalive off
         }
     }
 
