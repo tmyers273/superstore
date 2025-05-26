@@ -70,7 +70,7 @@ app.add_middleware(
         "http://localhost:5174",
         "http://localhost:5173",
         "http://localhost:8000",
-        "http://108.171.206.10:81/",
+        "http://108.171.206.10:81",
     ],
     allow_credentials=True,
     allow_methods=["*"],
