@@ -50,7 +50,7 @@ class TestDropTable:
                 assert found_table.status == TableStatus.ACTIVE
 
                 # Drop the table
-                dropped_table = metadata.drop_table(table)
+                dropped_table = await metadata.drop_table(table)
                 assert dropped_table.status == TableStatus.DROPPED
 
                 # Verify table is no longer visible in normal queries
@@ -106,7 +106,7 @@ class TestDropTable:
         assert found_table.status == TableStatus.ACTIVE
 
         # Drop the table
-        dropped_table = metadata.drop_table(table)
+        dropped_table = await metadata.drop_table(table)
         assert dropped_table.status == TableStatus.DROPPED
 
         # Verify table is no longer visible in normal queries
@@ -127,7 +127,7 @@ class TestDropTable:
         assert found_dropped_table is not None
         assert found_dropped_table.status == TableStatus.DROPPED
 
-    def test_drop_nonexistent_table_sqlite(self):
+    async def test_drop_nonexistent_table_sqlite(self):
         """Test dropping a non-existent table raises an error"""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as temp_db:
             temp_db.close()
@@ -147,12 +147,12 @@ class TestDropTable:
 
                 # Dropping should raise an error
                 with pytest.raises(ValueError, match="Table with id 999 not found"):
-                    metadata.drop_table(fake_table)
+                    await metadata.drop_table(fake_table)
 
             finally:
                 os.unlink(temp_db.name)
 
-    def test_drop_nonexistent_table_fake(self):
+    async def test_drop_nonexistent_table_fake(self):
         """Test dropping a non-existent table raises an error with FakeMetadataStore"""
         metadata = FakeMetadataStore()
 
@@ -167,7 +167,7 @@ class TestDropTable:
 
         # Dropping should raise an error
         with pytest.raises(ValueError, match="Table nonexistent_table not found"):
-            metadata.drop_table(fake_table)
+            await metadata.drop_table(fake_table)
 
     async def test_multiple_tables_drop_behavior(self):
         """Test behavior with multiple tables where some are dropped"""
@@ -200,7 +200,7 @@ class TestDropTable:
             assert table.status == TableStatus.ACTIVE
 
         # Drop the middle table
-        metadata.drop_table(tables[1])
+        await metadata.drop_table(tables[1])
 
         # Verify only 2 tables are active
         active_tables = await metadata.get_tables()

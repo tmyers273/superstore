@@ -110,7 +110,7 @@ class SqliteMetadata(MetadataStore):
                 return None
             return item.to_table()
 
-    def get_table_by_id(
+    async def get_table_by_id(
         self, table_id: int, include_dropped: bool = False
     ) -> Table | None:
         with Session(self.engine) as session:
@@ -130,7 +130,7 @@ class SqliteMetadata(MetadataStore):
             session.commit()
             return table_model.to_table()
 
-    def drop_table(self, table: Table) -> Table:
+    async def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
         This preserves all operations and micropartitions for historical purposes.

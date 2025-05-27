@@ -119,12 +119,12 @@ async def login(request: LoginRequest):
 
 @app.delete("/table/{table_id}")
 async def drop_table(table_id: int, user: User = Depends(current_active_user)):
-    table = metadata.get_table_by_id(table_id)
+    table = await metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 
     try:
-        dropped_table = metadata.drop_table(table)
+        dropped_table = await metadata.drop_table(table)
         return {
             "message": f"Table '{table.name}' has been dropped",
             "table": dropped_table.model_dump(),
@@ -154,7 +154,7 @@ async def table(
     user: User = Depends(current_active_user),
 ):
     print(await metadata.get_tables())
-    table = metadata.get_table_by_id(table_id)
+    table = await metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 
@@ -569,7 +569,7 @@ async def fake_data_status_endpoint(user: User = Depends(current_active_user)):
         return {"error": "DATA_DIR is not configured"}
 
     try:
-        return get_fake_data_status(metadata, data_dir)
+        return await get_fake_data_status(metadata, data_dir)
     except Exception as e:
         return {"error": f"Failed to get fake data status: {str(e)}"}
 

@@ -357,7 +357,7 @@ async def reset_fake_data(metadata: MetadataStore, data_dir: str):
     for table_name in fake_table_names:
         table = await metadata.get_table(table_name)
         if table is not None:
-            metadata.drop_table(table)
+            await metadata.drop_table(table)
             dropped_tables.append(table_name)
             print(f"Dropped table: {table_name}")
 
@@ -367,7 +367,9 @@ async def reset_fake_data(metadata: MetadataStore, data_dir: str):
     return {"dropped_tables": dropped_tables, "recreated_tables": fake_table_names}
 
 
-def get_fake_data_status(metadata: MetadataStore, data_dir: str) -> Dict[str, Any]:
+async def get_fake_data_status(
+    metadata: MetadataStore, data_dir: str
+) -> Dict[str, Any]:
     """Get status of all fake data tables"""
     if os.getenv("APP_ENV") != "dev":
         raise ValueError("This function is only available in development environment")

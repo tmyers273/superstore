@@ -64,7 +64,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_table_by_id(
+    async def get_table_by_id(
         self, table_id: int, include_dropped: bool = False
     ) -> Table | None:
         """
@@ -72,7 +72,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def drop_table(self, table: Table) -> Table:
+    async def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
         This preserves all operations and micropartitions for historical purposes.
@@ -241,7 +241,7 @@ class FakeMetadataStore(MetadataStore):
             return None
         return table
 
-    def get_table_by_id(
+    async def get_table_by_id(
         self, table_id: int, include_dropped: bool = False
     ) -> Table | None:
         for table in self.tables.values():
@@ -250,7 +250,7 @@ class FakeMetadataStore(MetadataStore):
                     return table
         return None
 
-    def drop_table(self, table: Table) -> Table:
+    async def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
         This preserves all operations and micropartitions for historical purposes.
