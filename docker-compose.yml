@@ -49,6 +49,7 @@ services:
       - webgateway
     environment:
       - VITE_USE_REAL_API=true
+      - VITE_API_URL=http://108.171.206.10:80
     container_name: superstore-frontend
 
 networks:
