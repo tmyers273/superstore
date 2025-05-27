@@ -3,6 +3,8 @@ Test script for the new register_datasets functionality.
 Tests registering multiple datasets and querying them with joins.
 """
 
+import asyncio
+
 import polars as pl
 from datafusion import SessionContext
 
@@ -366,8 +368,8 @@ async def test_register_datasets_with_custom_names():
 
 
 if __name__ == "__main__":
-    test_single_table_registration()
-    test_register_datasets_separately()
-    test_register_datasets_with_join()
-    test_register_datasets_with_custom_names()
+    asyncio.run(test_single_table_registration())
+    asyncio.run(test_register_datasets_separately())
+    asyncio.run(test_register_datasets_with_join())
+    asyncio.run(test_register_datasets_with_custom_names())
     print("🎉 All tests passed!")

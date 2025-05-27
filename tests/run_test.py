@@ -53,7 +53,7 @@ async def delete(
     min_pk_id = min(remaining_pks)
     max_pk_id = max(remaining_pks)
 
-    for p in metadata_store.micropartitions(
+    async for p in await metadata_store.micropartitions(
         table, s3, version=current_version, with_data=False
     ):
         if len(remaining_pks) == 0:
@@ -195,7 +195,9 @@ async def update(
     # TODO: this reserves far too many ids
     reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
-    for p in metadata_store.micropartitions(table, s3, version=current_version):
+    async for p in await metadata_store.micropartitions(
+        table, s3, version=current_version
+    ):
         df = p.dump()
         updated_items = items.filter(pl.col("id").is_in(df["id"]))
 
@@ -250,7 +252,9 @@ async def _cluster_with_partitions(
     stats: dict[str, dict[int, Statistics]] = {}
     mps: dict[str, dict[int, MicroPartition]] = {}
 
-    for mp in metadata.micropartitions(table, s3, with_data=False, version=version):
+    async for mp in await metadata.micropartitions(
+        table, s3, with_data=False, version=version
+    ):
         prefix = mp.key_prefix or ""
         if prefix not in stats:
             stats[prefix] = {}
@@ -399,7 +403,7 @@ async def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
     stats: dict[int, Statistics] = {}
     mps: dict[int, MicroPartition] = {}
     # print("Loading stats")
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
         mps[mp.id] = mp
 
@@ -538,7 +542,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     assert await metadata_store.get_table_version(table) == 1
     assert await metadata_store.get_op(table, 1) == SetOpAdd([1])
 
-    for p in metadata_store.micropartitions(table, s3):
+    async for p in await metadata_store.micropartitions(table, s3):
         assert p.dump().to_dicts() == users
 
     users.append({"id": 4, "name": "Bill Doe", "email": "bill.doe@example.com"})
@@ -549,7 +553,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     assert await metadata_store.get_table_version(table) == 2
     assert await metadata_store.get_op(table, 2) == SetOpAdd([2])
 
-    for i, p in enumerate(metadata_store.micropartitions(table, s3)):
+    async for i, p in enumerate(await metadata_store.micropartitions(table, s3)):
         if i == 0:
             expected = users[:3]
         elif i == 1:
@@ -562,7 +566,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
             f"Mismatch in micro partition #{p.id}\n\nExp: {expected}\n\nGot: {dump}\n\n"
         )
 
-    assert metadata_store.all(table, s3).to_dicts() == users
+    assert (await metadata_store.all(table, s3)).to_dicts() == users
 
     await delete(table, s3, metadata_store, [3])
     assert await metadata_store.get_table_version(table) == 3
@@ -573,7 +577,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         df = df.to_polars()
 
         active_mps = []
-        for p in metadata_store.micropartitions(table, s3):
+        async for p in await metadata_store.micropartitions(table, s3):
             active_mps.append(p.id)
         assert len(df) == 4
         assert [1, 2, 4, 5] == df["id"].to_list()
@@ -612,7 +616,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         ]
     )
     await delete_and_add(table, s3, metadata_store, [2], replacements)
-    ids = set(metadata_store.all(table, s3)["id"].to_list())
+    ids = set((await metadata_store.all(table, s3))["id"].to_list())
     assert ids == {1, 2, 6, 7}
 
     assert await metadata_store.get_table_version(table) == 5
@@ -653,7 +657,7 @@ async def check_statistics(metadata: MetadataStore, s3: S3Like):
 
     await insert(table, s3, metadata, df)
 
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         if mp.id == 0:
             continue
         stats = mp.stats
@@ -711,7 +715,7 @@ async def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
     await delete(table, s3, metadata, [1, 2, 3])
 
     ids = set()
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         ids.add(mp.id)
 
     assert ids == {2}

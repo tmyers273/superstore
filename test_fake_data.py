@@ -90,7 +90,7 @@ async def test_table_creation():
 
                     total_rows = 0
                     mp_count = 0
-                    for mp in metadata.micropartitions(
+                    async for mp in await metadata.micropartitions(
                         table, table_s3, with_data=False
                     ):
                         mp_count += 1

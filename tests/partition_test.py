@@ -37,12 +37,12 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     await insert(table, s3, metadata, df)
 
     # Expect 3 MPs, one for each unique user_id
-    assert metadata.micropartition_count(table, s3) == 3
+    assert await metadata.micropartition_count(table, s3) == 3
 
     # Check that objects exist for each partition key, but don't assume specific MP IDs
     # Collect all micropartitions and their keys
     mp_keys = []
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         key = f"{mp.key_prefix or ''}{mp.id}"
         mp_keys.append(key)
         # Verify the object exists in S3
@@ -69,11 +69,11 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     await update(table, s3, metadata, df)
 
     # Expect 3 MPs, one for each unique user_id
-    assert metadata.micropartition_count(table, s3) == 3
+    assert await metadata.micropartition_count(table, s3) == 3
 
     # Check that objects exist for each partition key after update
     mp_keys_after_update = []
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         key = f"{mp.key_prefix or ''}{mp.id}"
         mp_keys_after_update.append(key)
         # Verify the object exists in S3
@@ -91,11 +91,11 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     await delete(table, s3, metadata, [4])
 
     # Expect 3 MPs, one for each unique user_id
-    assert metadata.micropartition_count(table, s3) == 3
+    assert await metadata.micropartition_count(table, s3) == 3
 
     # Check that objects exist for each partition key after delete
     mp_keys_after_delete = []
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         key = f"{mp.key_prefix or ''}{mp.id}"
         mp_keys_after_delete.append(key)
         # Verify the object exists in S3
@@ -113,11 +113,11 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     # itself to be deleted
     await delete(table, s3, metadata, [3])
 
-    assert metadata.micropartition_count(table, s3) == 2
+    assert await metadata.micropartition_count(table, s3) == 2
 
     # Check that objects exist for remaining partition keys after final delete
     mp_keys_final = []
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         key = f"{mp.key_prefix or ''}{mp.id}"
         mp_keys_final.append(key)
         # Verify the object exists in S3

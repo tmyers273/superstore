@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import AsyncGenerator, Generator
 
 import polars as pl
 from sqlalchemy import (
@@ -152,11 +152,11 @@ class SqliteMetadata(MetadataStore):
             updated_table.status = TableStatus.DROPPED
             return updated_table
 
-    def get_stats(
+    async def get_stats(
         self, table: Table, s3: S3Like, version: int | None = None
     ) -> list[Statistics]:
         stats = []
-        for mp in self.micropartitions(table, s3, version, with_data=False):
+        async for mp in await self.micropartitions(table, s3, version, with_data=False):
             stats.append(mp.stats)
         return stats
 
@@ -218,12 +218,12 @@ class SqliteMetadata(MetadataStore):
 
             session.commit()
 
-    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+    async def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
         """
         out: pl.DataFrame | None = None
-        for metadata in self.micropartitions(table, s3):
+        async for metadata in await self.micropartitions(table, s3):
             if out is None:
                 out = metadata.dump()
             else:
@@ -343,7 +343,7 @@ class SqliteMetadata(MetadataStore):
         version: int | None = None,
         with_data: bool = True,
         prefix: str | None = None,
-    ) -> Generator[MicroPartition, None, None]:
+    ) -> AsyncGenerator[MicroPartition, None, None]:
         if prefix is not None and not prefix.endswith("/"):
             prefix = f"{prefix}/"
 
@@ -374,13 +374,14 @@ class SqliteMetadata(MetadataStore):
                     if micro_partition_raw is None:
                         raise ValueError(f"Micro partition `{key}` not found")
 
-                yield MicroPartition(
+                micropartition = MicroPartition(
                     id=mp.id,
                     data=micro_partition_raw,
                     stats=Statistics.model_validate(mp.stats),
                     header=Header(table_id=table.id),
                     key_prefix=mp.key_prefix,
                 )
+                yield micropartition
 
     async def delete_and_add_micro_partitions(
         self,

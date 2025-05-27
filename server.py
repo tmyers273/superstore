@@ -165,7 +165,9 @@ async def table(
     total_rows = 0
     total_filesize = 0
     all_mps: list[dict] = []
-    for i, mp in enumerate(metadata.micropartitions(table, table_s3, with_data=False)):
+    async for i, mp in enumerate(
+        await metadata.micropartitions(table, table_s3, with_data=False)
+    ):
         raw = mp.model_dump()
         del raw["data"]
         stats = mp.stats

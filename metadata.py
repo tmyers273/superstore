@@ -1,4 +1,4 @@
-from typing import Generator, Protocol
+from typing import AsyncGenerator, Protocol
 
 import polars as pl
 
@@ -127,13 +127,13 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def micropartitions(
+    async def micropartitions(
         self,
         table: Table,
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> Generator[MicroPartition, None, None]:
+    ) -> AsyncGenerator[MicroPartition, None, None]:
         """
         A generator that loops through all the micro partitions for a table.
 
@@ -147,20 +147,20 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+    async def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
         """
         raise NotImplementedError
 
-    def micropartition_count(
+    async def micropartition_count(
         self, table: Table, s3: S3Like, version: int | None = None
     ) -> int:
         """
         Returns the number of micropartitions for a table at a given version.
         """
         cnt = 0
-        for _ in self.micropartitions(table, s3, version):
+        async for _ in await self.micropartitions(table, s3, version):
             cnt += 1
         return cnt
 
@@ -309,13 +309,13 @@ class FakeMetadataStore(MetadataStore):
         self.global_micropartition_id_counter = end - 1
         return list(range(start, end))
 
-    def micropartitions(
+    async def micropartitions(
         self,
         table: Table,
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> Generator[MicroPartition, None, None]:
+    ) -> AsyncGenerator[MicroPartition, None, None]:
         if version is None:
             if table.name not in self.current_micro_partitions:
                 raise ValueError(f"Table {table.name} has no micro partitions")
@@ -359,12 +359,12 @@ class FakeMetadataStore(MetadataStore):
 
             return set(apply(set(), self.ops[table.name][:version]))
 
-    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+    async def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
         """
         out: pl.DataFrame | None = None
-        for metadata in self.micropartitions(table, s3):
+        async for metadata in await self.micropartitions(table, s3):
             if out is None:
                 out = metadata.dump()
             else:

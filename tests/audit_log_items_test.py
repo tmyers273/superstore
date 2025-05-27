@@ -123,7 +123,7 @@ async def test_audit_log_items():
         await insert(table, s3, metadata_store, df)
 
     stats = {}
-    for mp in metadata_store.micropartitions(table, s3):
+    async for mp in await metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
     # for id, stat in stats.items():

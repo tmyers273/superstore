@@ -106,7 +106,7 @@ async def test_query_time():
     included_ids = []
     paths = []
     data_dir = os.getenv("DATA_DIR")
-    for mp in metadata.micropartitions(
+    async for mp in await metadata.micropartitions(
         table, s3, with_data=False, prefix=f"advertiser_id={search}"
     ):
         cnt += 1
@@ -223,7 +223,7 @@ def test_clustering3() -> None:
     table = create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
 
-    cluster(metadata, s3, table)
+    await cluster(metadata, s3, table)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
@@ -240,7 +240,7 @@ async def test_clustering2() -> None:
     found = 0
     search = "ENTITY2IMWE41VQFHYI"
     index: int | None = None
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         if index is None:
             for col in mp.stats.columns:
                 if col.name == "advertiser_id":
@@ -336,7 +336,7 @@ async def test_clustering() -> None:
 
     stats: dict[int, Statistics] = {}
     print("Loading stats")
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
 
     index = 0
@@ -471,7 +471,7 @@ async def test_ams():
         )
 
     stats = {}
-    for mp in metadata_store.micropartitions(table, s3):
+    async for mp in await metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
     print(f"Total count from parquet files: {total_count}")

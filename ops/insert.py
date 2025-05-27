@@ -145,7 +145,7 @@ class PartitionedNewFilesInsertStrategy(InsertStrategy):
 
 
 class PartitionedAppendInsertStrategy(InsertStrategy):
-    def _get_most_recent_mps(
+    async def _get_most_recent_mps(
         self,
         table: Table,
         s3: S3Like,
@@ -154,7 +154,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
     ) -> dict[str, MicroPartition]:
         # recent_start = perf_counter()
         latest_mps: dict[str, MicroPartition] = {}
-        for mp in metadata_store.micropartitions(
+        async for mp in await metadata_store.micropartitions(
             table, s3, current_version, with_data=False
         ):
             if mp.key_prefix is None:
@@ -336,7 +336,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         current_version = await metadata_store.get_table_version(table)
 
         # Get the most recent MPs for each partition key
-        latest_mps = self._get_most_recent_mps(
+        latest_mps = await self._get_most_recent_mps(
             table, s3, metadata_store, current_version
         )
 
