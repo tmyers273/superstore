@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Generator
+from typing import Any, AsyncGenerator, Coroutine, Generator
 
 import polars as pl
 from sqlalchemy import (
@@ -343,7 +343,7 @@ class SqliteMetadata(MetadataStore):
         version: int | None = None,
         with_data: bool = True,
         prefix: str | None = None,
-    ) -> AsyncGenerator[MicroPartition, None, None]:
+    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
         if prefix is not None and not prefix.endswith("/"):
             prefix = f"{prefix}/"
 

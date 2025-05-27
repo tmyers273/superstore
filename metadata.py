@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Protocol
+from typing import Any, AsyncGenerator, Coroutine, Protocol
 
 import polars as pl
 
@@ -133,7 +133,8 @@ class MetadataStore(Protocol):
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> AsyncGenerator[MicroPartition, None, None]:
+        prefix: str | None = None,
+    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
         """
         A generator that loops through all the micro partitions for a table.
 
@@ -315,7 +316,8 @@ class FakeMetadataStore(MetadataStore):
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> AsyncGenerator[MicroPartition, None, None]:
+        prefix: str | None = None,
+    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
         if version is None:
             if table.name not in self.current_micro_partitions:
                 raise ValueError(f"Table {table.name} has no micro partitions")
