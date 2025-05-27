@@ -30,20 +30,22 @@
 import bisect
 from typing import Protocol, Tuple, Union
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from classes import Table
-from db import Base, OperationSnapshot
+from db import Base, OperationSnapshot, create_async_engine
 from set.set_ops import apply
 from tests.set_ops_test import generate_random_ops
 
 
 class Snapshotter(Protocol):
-    def set(self, table: Table, version: int, cams: list[int]):
+    async def set(self, table: Table, version: int, cams: list[int]):
         raise NotImplementedError
 
-    def get(self, table: Table, version: int) -> Union[None, Tuple[int, list[int]]]:
+    async def get(
+        self, table: Table, version: int
+    ) -> Union[None, Tuple[int, list[int]]]:
         """
         Given a version, return the snapshot with the highest
         version <= the given version.
@@ -55,29 +57,30 @@ class Snapshotter(Protocol):
 
 
 class SqliteSnapshotter(Snapshotter):
-    def __init__(self, connection_string: str):
-        self.engine = create_engine(connection_string)
-        Base.metadata.create_all(self.engine, tables=[OperationSnapshot.__table__])
+    def __init__(self, engine: AsyncEngine):
+        self.engine = engine
 
-    def set(self, table: Table, version: int, cams: list[int]):
+    async def set(self, table: Table, version: int, cams: list[int]):
         snapshot = OperationSnapshot(
             table_name=table.name,
             version=version,
             data=cams,
         )
-        with Session(self.engine) as session:
+        async with AsyncSession(self.engine) as session:
             session.add(snapshot)
-            session.commit()
+            await session.commit()
 
-    def get(self, table: Table, version: int) -> Union[None, Tuple[int, list[int]]]:
-        with Session(self.engine) as session:
-            snapshot = (
-                session.query(OperationSnapshot)
+    async def get(
+        self, table: Table, version: int
+    ) -> Union[None, Tuple[int, list[int]]]:
+        async with AsyncSession(self.engine) as session:
+            q = (
+                select(OperationSnapshot)
                 .filter(OperationSnapshot.table_name == table.name)
                 .filter(OperationSnapshot.version <= version)
                 .order_by(OperationSnapshot.version.desc())
-                .first()
             )
+            snapshot = await session.scalar(q)
         if snapshot is None:
             return None
         return snapshot.version, snapshot.data
@@ -88,7 +91,7 @@ class FakeSnapshotter(Snapshotter):
         self.snapshots_data: dict[int, list[int]] = {}
         self.sorted_versions: list[int] = []
 
-    def set(self, table: Table, version: int, cams: list[int]):
+    async def set(self, table: Table, version: int, cams: list[int]):
         snapshot_value = cams
 
         if version not in self.snapshots_data:
@@ -102,7 +105,9 @@ class FakeSnapshotter(Snapshotter):
             self.snapshots_data[version] = snapshot_value
             # self.sorted_versions does not need to change as 'version' is already in it.
 
-    def get(self, table: Table, version: int) -> Union[None, Tuple[int, list[int]]]:
+    async def get(
+        self, table: Table, version: int
+    ) -> Union[None, Tuple[int, list[int]]]:
         if not self.sorted_versions:
             return None
 
@@ -122,7 +127,7 @@ class FakeSnapshotter(Snapshotter):
             return found_version, self.snapshots_data[found_version]
 
 
-def check_snapshotter(snapshotter: Snapshotter):
+async def check_snapshotter(snapshotter: Snapshotter):
     table = Table(
         id=0,
         name="test",
@@ -132,23 +137,28 @@ def check_snapshotter(snapshotter: Snapshotter):
         partition_keys=[],
         sort_keys=[],
     )
-    snapshotter.set(table, 1, [])
-    snapshotter.set(table, 3, [1, 2])
-    assert snapshotter.get(table, 0) is None
-    assert snapshotter.get(table, 1) == (1, [])
-    assert snapshotter.get(table, 2) == (1, [])
-    assert snapshotter.get(table, 3) == (3, [1, 2])
-    assert snapshotter.get(table, 4) == (3, [1, 2])
+    await snapshotter.set(table, 1, [])
+    await snapshotter.set(table, 3, [1, 2])
+    assert await snapshotter.get(table, 0) is None
+    assert await snapshotter.get(table, 1) == (1, [])
+    assert await snapshotter.get(table, 2) == (1, [])
+    assert await snapshotter.get(table, 3) == (3, [1, 2])
+    assert await snapshotter.get(table, 4) == (3, [1, 2])
 
 
-def test_fake_snapshot():
+async def test_fake_snapshot():
     snapshotter = FakeSnapshotter()
-    check_snapshotter(snapshotter)
+    await check_snapshotter(snapshotter)
 
 
-def test_sqlite_snapshot():
-    snapshotter = SqliteSnapshotter("sqlite:///:memory:")
-    check_snapshotter(snapshotter)
+async def test_sqlite_snapshot():
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    snapshotter = SqliteSnapshotter(engine)
+    await check_snapshotter(snapshotter)
 
 
 def test_snapshot_ops():
