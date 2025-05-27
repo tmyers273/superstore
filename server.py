@@ -516,7 +516,7 @@ async def ingest_na_sp_traffic(limit: int = 5):
     s3_path = f"{data_dir}/sp_traffic/mps"
     s3 = LocalS3(s3_path)
 
-    files = get_parquet_files("/ingest/ams/na/sp-traffic")
+    files = get_parquet_files("/ingest/ams/na/sp-traffic/merged")
     print("Found", len(files), "parquet files")
 
     total_dur = 0.0
