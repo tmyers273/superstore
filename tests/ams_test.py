@@ -49,6 +49,8 @@ def get_table() -> Table:
             ColumnDefinitions(name="cost", type="Float64"),
             ColumnDefinitions(name="date", type="Date"),
         ],
+        partition_keys=["advertiser_id"],
+        sort_keys=["time_window_start"],
     )
 
 
