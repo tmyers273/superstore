@@ -17,46 +17,9 @@ print(f"Test DATA_DIR: {os.environ['DATA_DIR']}")
 # Import after setting environment variables
 from fake_data import (
     create_fake_tables_and_data,
-    generate_fake_analytics_data,
-    generate_fake_orders_data,
-    generate_fake_products_data,
-    generate_fake_users_data,
 )
 from local_s3 import LocalS3
 from sqlite_metadata import SqliteMetadata
-
-
-def test_data_generators():
-    """Test individual data generators"""
-    print("Testing data generators...")
-
-    # Test users data
-    users_df = generate_fake_users_data(10)
-    print(f"Generated {len(users_df)} users")
-    print("Users columns:", users_df.columns)
-    print("Sample user:", users_df.to_dicts()[0])
-    print()
-
-    # Test orders data
-    orders_df = generate_fake_orders_data(20)
-    print(f"Generated {len(orders_df)} orders")
-    print("Orders columns:", orders_df.columns)
-    print("Sample order:", orders_df.to_dicts()[0])
-    print()
-
-    # Test analytics data
-    analytics_df = generate_fake_analytics_data(15)
-    print(f"Generated {len(analytics_df)} analytics events")
-    print("Analytics columns:", analytics_df.columns)
-    print("Sample analytics:", analytics_df.to_dicts()[0])
-    print()
-
-    # Test products data
-    products_df = generate_fake_products_data(5)
-    print(f"Generated {len(products_df)} products")
-    print("Products columns:", products_df.columns)
-    print("Sample product:", products_df.to_dicts()[0])
-    print()
 
 
 async def test_table_creation():

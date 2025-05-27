@@ -3,8 +3,6 @@ Test script for the new register_datasets functionality.
 Tests registering multiple datasets and querying them with joins.
 """
 
-import asyncio
-
 import polars as pl
 from datafusion import SessionContext
 
@@ -55,14 +53,10 @@ async def test_single_table_registration():
     await s3.register_dataset(ctx, "users", users_table, metadata_store)
 
     result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
-    print(f"Single table columns: {result.columns}")
-    print(f"Single table data: {result.to_dicts()}")
 
     assert result.columns == ["id", "name", "email"]
     assert len(result) == 2
     assert result.to_dicts()[0]["name"] == "Alice"
-
-    print("✅ Single table registration test passed!")
 
 
 async def test_register_datasets_separately():
@@ -134,15 +128,8 @@ async def test_register_datasets_separately():
     users_result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
     orders_result = ctx.sql("SELECT * FROM orders ORDER BY id").to_polars()
 
-    print(f"Users columns: {users_result.columns}")
-    print(f"Orders columns: {orders_result.columns}")
-    print(f"Users data: {users_result.to_dicts()}")
-    print(f"Orders data: {orders_result.to_dicts()}")
-
     assert users_result.columns == ["id", "name", "email"]
     assert orders_result.columns == ["id", "user_id", "product", "amount"]
-
-    print("✅ Separate registration test passed!")
 
 
 async def test_register_datasets_with_join():
@@ -230,16 +217,6 @@ async def test_register_datasets_with_join():
     # Verify the registration mapping
     assert registered_names == {"users": "users", "orders": "orders"}
 
-    # Debug: Check what columns are available in each table
-    print("Debug: Checking table schemas...")
-    users_result = ctx.sql("SELECT * FROM users LIMIT 1").to_polars()
-    orders_result = ctx.sql("SELECT * FROM orders LIMIT 1").to_polars()
-
-    print(f"Users columns: {users_result.columns}")
-    print(f"Orders columns: {orders_result.columns}")
-    print(f"Users data sample: {users_result.to_dicts()}")
-    print(f"Orders data sample: {orders_result.to_dicts()}")
-
     # Test the join query
     query = """
     SELECT 
@@ -297,8 +274,6 @@ async def test_register_datasets_with_join():
         assert actual["email"] == expected["email"]
         assert actual["product"] == expected["product"]
         assert abs(actual["amount"] - expected["amount"]) < 0.01  # Float comparison
-
-    print("✅ Join query test passed!")
 
 
 async def test_register_datasets_with_custom_names():
@@ -363,13 +338,3 @@ async def test_register_datasets_with_custom_names():
 
     assert result1.to_dicts()[0]["count"] == 2
     assert result2.to_dicts()[0]["count"] == 2
-
-    print("✅ Custom table names test passed!")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_single_table_registration())
-    asyncio.run(test_register_datasets_separately())
-    asyncio.run(test_register_datasets_with_join())
-    asyncio.run(test_register_datasets_with_custom_names())
-    print("🎉 All tests passed!")
