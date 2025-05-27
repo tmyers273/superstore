@@ -14,6 +14,7 @@ from set.set_ops import SetOp, SetOpAdd, SetOpDelete, SetOpDeleteAndAdd, SetOpRe
 # Make DATABASE_URL configurable via environment variables
 DATA_DIR = os.getenv("DATA_DIR", ".")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/db.db")
+print(f"In db.py DATA_DIR={DATA_DIR}, DATABASE_URL={DATABASE_URL}")
 
 
 class Base(DeclarativeBase):

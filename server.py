@@ -47,7 +47,7 @@ async def create_db_and_tables():
     # Create fake data if in development environment and tables don't exist
     if data_dir is not None:
         metadata = SqliteMetadata(engine)
-        create_fake_tables_and_data(metadata, data_dir)
+        await create_fake_tables_and_data(metadata, data_dir)
 
 
 @asynccontextmanager

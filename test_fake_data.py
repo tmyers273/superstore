@@ -37,7 +37,7 @@ async def test_table_creation():
     metadata = SqliteMetadata(engine)
 
     try:
-        create_fake_tables_and_data(metadata, data_dir)
+        await create_fake_tables_and_data(metadata, data_dir)
         print("✅ Fake tables and data created successfully!")
 
         # Verify tables were created
