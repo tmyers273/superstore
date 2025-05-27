@@ -271,11 +271,11 @@ def get_fake_table_names():
     return [config["name"] for config in get_fake_tables_config()]
 
 
-def check_fake_tables_exist(metadata: MetadataStore) -> bool:
+async def check_fake_tables_exist(metadata: MetadataStore) -> bool:
     """Check if any fake tables already exist"""
     fake_table_names = get_fake_table_names()
     for table_name in fake_table_names:
-        if metadata.get_table(table_name) is not None:
+        if await metadata.get_table(table_name) is not None:
             return True
     return False
 
@@ -287,7 +287,7 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
         return
 
     # Check if fake tables already exist
-    if check_fake_tables_exist(metadata):
+    if await check_fake_tables_exist(metadata):
         print("Fake tables already exist, skipping fake data creation")
         return
 
@@ -310,7 +310,7 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     # Create tables and insert data
     for table_config in fake_tables_config:
         # Check if table already exists (double-check)
-        existing_table = metadata.get_table(table_config["name"])
+        existing_table = await metadata.get_table(table_config["name"])
         if existing_table is not None:
             print(f"Table {table_config['name']} already exists, skipping...")
             continue
@@ -355,7 +355,7 @@ async def reset_fake_data(metadata: MetadataStore, data_dir: str):
 
     dropped_tables = []
     for table_name in fake_table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is not None:
             metadata.drop_table(table)
             dropped_tables.append(table_name)
@@ -377,7 +377,7 @@ def get_fake_data_status(metadata: MetadataStore, data_dir: str) -> Dict[str, An
     status: Dict[str, Any] = {"app_env": os.getenv("APP_ENV"), "tables": {}}
 
     for table_name in fake_table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is not None:
             # Get table statistics
             try:

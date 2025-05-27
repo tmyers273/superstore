@@ -43,7 +43,7 @@ async def create_table_if_needed(metadata: MetadataStore) -> Table:
             Schema(id=0, name="default", database_id=database.id)
         )
 
-    table = metadata.get_table("audit_log_items")
+    table = await metadata.get_table("audit_log_items")
     if table is None:
         table = get_table()
         table.schema_id = schema.id
@@ -51,7 +51,7 @@ async def create_table_if_needed(metadata: MetadataStore) -> Table:
         table = await metadata.create_table(table)
 
     table = get_table()
-    if metadata.get_table(table.name) is None:
+    if await metadata.get_table(table.name) is None:
         table = await metadata.create_table(table)
 
     return table

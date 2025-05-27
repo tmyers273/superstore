@@ -253,7 +253,7 @@ async def create_table_if_needed_audit_log_items():
                 Schema(id=0, name="default", database_id=database.id)
             )
 
-        table = metadata.get_table("audit_log_items")
+        table = await metadata.get_table("audit_log_items")
         if table is None:
             table = get_table()
             table.schema_id = schema.id
@@ -261,7 +261,7 @@ async def create_table_if_needed_audit_log_items():
             await metadata.create_table(table)
 
         table = get_table()
-        if metadata.get_table(table.name) is None:
+        if await metadata.get_table(table.name) is None:
             await metadata.create_table(table)
 
         return table
@@ -272,7 +272,7 @@ async def create_table_if_needed_audit_log_items():
 
 @app.get("/max-audit-log-items")
 async def audit_log_items_max():
-    table = metadata.get_table(table_name)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
@@ -289,7 +289,7 @@ async def audit_log_items_max():
 
 @app.get("/total-audit-log-items")
 async def audit_log_items_total():
-    table = metadata.get_table(table_name)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
@@ -327,7 +327,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
     # Get all requested tables and validate they exist
     tables = []
     for table_name in table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is None:
             return {"error": f"Table '{table_name}' not found"}
         tables.append(table)
@@ -390,7 +390,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
 
 @app.get("/audit-log-items")
 async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
-    table = metadata.get_table(table_name)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
@@ -473,7 +473,7 @@ async def create_sp_traffic_table(schema_name: str = "na"):
             Schema(id=0, name=schema_name, database_id=db.id)
         )
 
-    table = metadata.get_table("sp_traffic")
+    table = await metadata.get_table("sp_traffic")
     if table is None:
         table = ams_test.get_table()
         table.id = 0
@@ -489,7 +489,7 @@ async def create_sp_traffic_table(schema_name: str = "na"):
 async def ingest_na_sp_traffic(limit: int = 5):
     await create_sp_traffic_table(schema_name="na")
 
-    table = metadata.get_table("sp_traffic")
+    table = await metadata.get_table("sp_traffic")
     if table is None:
         raise Exception("Table not found")
 

@@ -63,7 +63,7 @@ async def create_table_if_needed(metadata: MetadataStore) -> Table:
             Schema(id=0, name="default", database_id=database.id)
         )
 
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         table = get_table()
         table.schema_id = schema.id
@@ -227,11 +227,11 @@ def test_clustering3() -> None:
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering2() -> None:
+async def test_clustering2() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
 
@@ -326,11 +326,11 @@ def test_clustering2() -> None:
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering() -> None:
+async def test_clustering() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/mps")
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
 

@@ -45,7 +45,7 @@ class TestDropTable:
                 assert tables[0].name == "test_table"
                 assert tables[0].status == TableStatus.ACTIVE
 
-                found_table = metadata.get_table("test_table")
+                found_table = await metadata.get_table("test_table")
                 assert found_table is not None
                 assert found_table.status == TableStatus.ACTIVE
 
@@ -57,7 +57,7 @@ class TestDropTable:
                 tables = await metadata.get_tables()
                 assert len(tables) == 0
 
-                found_table = metadata.get_table("test_table")
+                found_table = await metadata.get_table("test_table")
                 assert found_table is None
 
                 # Verify table is still visible when including dropped tables
@@ -65,7 +65,7 @@ class TestDropTable:
                 assert len(tables_with_dropped) == 1
                 assert tables_with_dropped[0].status == TableStatus.DROPPED
 
-                found_dropped_table = metadata.get_table(
+                found_dropped_table = await metadata.get_table(
                     "test_table", include_dropped=True
                 )
                 assert found_dropped_table is not None
@@ -101,7 +101,7 @@ class TestDropTable:
         assert tables[0].name == "test_table"
         assert tables[0].status == TableStatus.ACTIVE
 
-        found_table = metadata.get_table("test_table")
+        found_table = await metadata.get_table("test_table")
         assert found_table is not None
         assert found_table.status == TableStatus.ACTIVE
 
@@ -113,7 +113,7 @@ class TestDropTable:
         tables = await metadata.get_tables()
         assert len(tables) == 0
 
-        found_table = metadata.get_table("test_table")
+        found_table = await metadata.get_table("test_table")
         assert found_table is None
 
         # Verify table is still visible when including dropped tables
@@ -121,7 +121,9 @@ class TestDropTable:
         assert len(tables_with_dropped) == 1
         assert tables_with_dropped[0].status == TableStatus.DROPPED
 
-        found_dropped_table = metadata.get_table("test_table", include_dropped=True)
+        found_dropped_table = await metadata.get_table(
+            "test_table", include_dropped=True
+        )
         assert found_dropped_table is not None
         assert found_dropped_table.status == TableStatus.DROPPED
 
@@ -211,7 +213,7 @@ class TestDropTable:
         assert len(all_tables) == 3
 
         # Verify the dropped table has correct status
-        dropped_table = metadata.get_table("table_2", include_dropped=True)
+        dropped_table = await metadata.get_table("table_2", include_dropped=True)
         assert dropped_table is not None
         assert dropped_table.status == TableStatus.DROPPED
 

@@ -58,7 +58,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+    async def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         """
         Returns the table with the given name.
         """
@@ -233,7 +233,7 @@ class FakeMetadataStore(MetadataStore):
             tables = [t for t in tables if t.status == TableStatus.ACTIVE]
         return tables
 
-    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+    async def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         table = self.tables.get(name)
         if table is None:
             return None

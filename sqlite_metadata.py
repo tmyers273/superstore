@@ -100,7 +100,7 @@ class SqliteMetadata(MetadataStore):
             items = session.execute(stmt).scalars().all()
             return [item.to_table() for item in items]
 
-    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+    async def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         with Session(self.engine) as session:
             stmt = select(TableModel).where(TableModel.name == name)
             if not include_dropped:

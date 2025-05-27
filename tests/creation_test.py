@@ -47,7 +47,7 @@ async def table_creation(metadata_store: MetadataStore, s3: S3Like):
     assert len(tables) == 1
     assert tables[0].id == 1
     assert tables[0].name == "users"
-    table_obj = metadata_store.get_table("users")
+    table_obj = await metadata_store.get_table("users")
     assert table_obj is not None
     assert table_obj.id == 1
     assert table_obj.name == "users"
