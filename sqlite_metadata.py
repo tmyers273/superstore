@@ -1,4 +1,4 @@
-from typing import Any, AsyncGenerator, Coroutine, Generator
+from typing import AsyncGenerator, Generator
 
 import polars as pl
 from sqlalchemy import (
@@ -156,7 +156,7 @@ class SqliteMetadata(MetadataStore):
         self, table: Table, s3: S3Like, version: int | None = None
     ) -> list[Statistics]:
         stats = []
-        async for mp in await self.micropartitions(table, s3, version, with_data=False):
+        async for mp in self.micropartitions(table, s3, version, with_data=False):
             stats.append(mp.stats)
         return stats
 
@@ -343,45 +343,62 @@ class SqliteMetadata(MetadataStore):
         version: int | None = None,
         with_data: bool = True,
         prefix: str | None = None,
-    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
-        if prefix is not None and not prefix.endswith("/"):
-            prefix = f"{prefix}/"
+    ) -> AsyncGenerator[MicroPartition, None]:
+        async def _generator(
+            self,
+            table: Table,
+            s3: S3Like,
+            version: int | None = None,
+            with_data: bool = True,
+            prefix: str | None = None,
+        ):
+            if prefix is not None and not prefix.endswith("/"):
+                prefix = f"{prefix}/"
 
-        ids = await self._get_ids(table, version)
-        with Session(self.engine) as session:
-            micro_partitions: list[MicroPartitionMetadata] = []
-            # print(f"Loading {len(ids)} micro partitions")
+            ids = await self._get_ids(table, version)
+            with Session(self.engine) as session:
+                micro_partitions: list[MicroPartitionMetadata] = []
+                # print(f"Loading {len(ids)} micro partitions")
 
-            for id_chunk in self.chunked(list(ids), 1000):
-                q = select(MicroPartitionMetadata).where(
-                    MicroPartitionMetadata.id.in_(id_chunk)
-                )
-                if prefix is not None:
-                    q = q.where(MicroPartitionMetadata.key_prefix == prefix)
-                chunk_mps = session.execute(q).scalars().all()
-                micro_partitions.extend(chunk_mps)
-                # print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
+                for id_chunk in self.chunked(list(ids), 1000):
+                    q = select(MicroPartitionMetadata).where(
+                        MicroPartitionMetadata.id.in_(id_chunk)
+                    )
+                    if prefix is not None:
+                        q = q.where(MicroPartitionMetadata.key_prefix == prefix)
+                    chunk_mps = session.execute(q).scalars().all()
+                    micro_partitions.extend(chunk_mps)
+                    # print(f"Loaded {len(micro_partitions)}/{len(ids)} micro partitions")
 
-            # print(f"Loaded {len(micro_partitions)} micro partitions")
+                # print(f"Loaded {len(micro_partitions)} micro partitions")
 
-            # Yield micro partitions
-            for mp in micro_partitions:
-                micro_partition_raw = None
-                if with_data:
-                    prefix = mp.key_prefix or ""
-                    key = f"{prefix}{mp.id}"
-                    micro_partition_raw = s3.get_object("bucket", key)
-                    if micro_partition_raw is None:
-                        raise ValueError(f"Micro partition `{key}` not found")
+                # Yield micro partitions
+                for mp in micro_partitions:
+                    micro_partition_raw = None
+                    if with_data:
+                        prefix = mp.key_prefix or ""
+                        key = f"{prefix}{mp.id}"
+                        micro_partition_raw = s3.get_object("bucket", key)
+                        if micro_partition_raw is None:
+                            raise ValueError(f"Micro partition `{key}` not found")
 
-                micropartition = MicroPartition(
-                    id=mp.id,
-                    data=micro_partition_raw,
-                    stats=Statistics.model_validate(mp.stats),
-                    header=Header(table_id=table.id),
-                    key_prefix=mp.key_prefix,
-                )
-                yield micropartition
+                    micropartition = MicroPartition(
+                        id=mp.id,
+                        data=micro_partition_raw,
+                        stats=Statistics.model_validate(mp.stats),
+                        header=Header(table_id=table.id),
+                        key_prefix=mp.key_prefix,
+                    )
+                    yield micropartition
+
+        return _generator(
+            self,
+            table,
+            s3,
+            version,
+            with_data,
+            prefix,
+        )
 
     async def delete_and_add_micro_partitions(
         self,

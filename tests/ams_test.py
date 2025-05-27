@@ -216,7 +216,7 @@ async def test_query_time():
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering3() -> None:
+async def test_clustering3() -> None:
     os.environ["DATA_DIR"] = "ams_scratch"
 
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")

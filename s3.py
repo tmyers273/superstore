@@ -98,7 +98,7 @@ class FakeS3(S3Like):
         ctx: SessionContext,
         table_name: str,
         table: "Table",
-        metadata_store,
+        metadata_store: "MetadataStore",
         version: int | None = None,
         with_data: bool = True,
         included_mp_ids: set[int] | None = None,
@@ -108,7 +108,7 @@ class FakeS3(S3Like):
         # Create a temporary directory that will be cleaned up when the context manager exits
         tmpdir = tempfile.mkdtemp()
 
-        for p in metadata_store.micropartitions(
+        async for p in await metadata_store.micropartitions(
             table, self, version=version, with_data=with_data
         ):
             if included_mp_ids is not None and p.id not in included_mp_ids:

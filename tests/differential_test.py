@@ -113,7 +113,7 @@ class DifferentialRunnerSqlite(DifferentialRunner):
     async def check_invariants(self, gen: "OpGenerator"):
         pass
 
-    def all(self) -> list[dict]:
+    async def all(self) -> list[dict]:
         with Session(self.engine) as session:
             stmt = select(self.users).order_by(self.users.id)
             items = session.execute(stmt).scalars().all()

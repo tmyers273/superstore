@@ -1,4 +1,4 @@
-from typing import Any, AsyncGenerator, Coroutine, Protocol
+from typing import AsyncGenerator, Protocol
 
 import polars as pl
 
@@ -134,7 +134,7 @@ class MetadataStore(Protocol):
         version: int | None = None,
         with_data: bool = True,
         prefix: str | None = None,
-    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
+    ) -> AsyncGenerator[MicroPartition, None]:
         """
         A generator that loops through all the micro partitions for a table.
 
@@ -317,38 +317,38 @@ class FakeMetadataStore(MetadataStore):
         version: int | None = None,
         with_data: bool = True,
         prefix: str | None = None,
-    ) -> Coroutine[Any, Any, AsyncGenerator[MicroPartition, None, None]]:
-        if version is None:
-            if table.name not in self.current_micro_partitions:
-                raise ValueError(f"Table {table.name} has no micro partitions")
+    ) -> AsyncGenerator[MicroPartition, None]:
+        async def _generator():
+            if version is None:
+                if table.name not in self.current_micro_partitions:
+                    raise ValueError(f"Table {table.name} has no micro partitions")
+                micropartitions = self.current_micro_partitions[table.name]
+            else:
+                if table.name not in self.ops:
+                    return
+                if len(self.ops[table.name]) < version:
+                    raise ValueError(f"Version {version} not found")
+                micropartitions = list(apply(set(), self.ops[table.name][:version]))
 
-            micropartitions = self.current_micro_partitions[table.name]
-        else:
-            if table.name not in self.ops:
-                return
-            if len(self.ops[table.name]) < version:
-                raise ValueError(f"Version {version} not found")
+            for micro_partition_id in micropartitions:
+                metadata = self.raw_micro_partitions[micro_partition_id]
+                micro_partition_raw = None
+                prefix = metadata.get("key_prefix", None) or ""
+                if with_data == True:
+                    key = f"{prefix}{metadata['id']}"
+                    micro_partition_raw = s3.get_object("bucket", key)
+                    if micro_partition_raw is None:
+                        raise ValueError(f"Micro partition `{key}` not found")
 
-            micropartitions = list(apply(set(), self.ops[table.name][:version]))
+                yield MicroPartition(
+                    id=metadata["id"],
+                    header=metadata["header"],
+                    data=micro_partition_raw,
+                    stats=metadata["stats"],
+                    key_prefix=prefix,
+                )
 
-        for micro_partition_id in micropartitions:
-            metadata = self.raw_micro_partitions[micro_partition_id]
-
-            micro_partition_raw = None
-            prefix = metadata.get("key_prefix", None) or ""
-            if with_data == True:
-                key = f"{prefix}{metadata['id']}"
-                micro_partition_raw = s3.get_object("bucket", key)
-                if micro_partition_raw is None:
-                    raise ValueError(f"Micro partition `{key}` not found")
-
-            yield MicroPartition(
-                id=metadata["id"],
-                header=metadata["header"],
-                data=micro_partition_raw,
-                stats=metadata["stats"],
-                key_prefix=prefix,
-            )
+        return _generator()
 
     async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         if version is None:

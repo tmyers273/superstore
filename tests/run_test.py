@@ -553,7 +553,8 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     assert await metadata_store.get_table_version(table) == 2
     assert await metadata_store.get_op(table, 2) == SetOpAdd([2])
 
-    async for i, p in enumerate(await metadata_store.micropartitions(table, s3)):
+    i = 0
+    async for p in await metadata_store.micropartitions(table, s3):
         if i == 0:
             expected = users[:3]
         elif i == 1:
@@ -565,6 +566,7 @@ async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         assert dump.to_dicts() == expected, (
             f"Mismatch in micro partition #{p.id}\n\nExp: {expected}\n\nGot: {dump}\n\n"
         )
+        i += 1
 
     assert (await metadata_store.all(table, s3)).to_dicts() == users
 
@@ -734,7 +736,7 @@ async def test_empty_mps_are_deleted_sqlite():
 
 
 @pytest.mark.skip(reason="Takes too long to run")
-def test_stress():
+async def test_stress():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
