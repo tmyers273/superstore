@@ -121,7 +121,7 @@ class MetadataStore(Protocol):
 
         raise NotImplementedError
 
-    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+    async def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         """
         Reserve a list of micropartition ids for a table.
         """
@@ -304,7 +304,7 @@ class FakeMetadataStore(MetadataStore):
         self.ops[table.name].append(SetOpAdd(ids))
         self.current_micro_partitions[table.name].extend(ids)
 
-    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+    async def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         start = self.global_micropartition_id_counter + 1
         end = start + number
         self.global_micropartition_id_counter = end - 1

@@ -46,24 +46,24 @@ class TestSqliteMetadata(unittest.TestCase):
         if os.path.exists(self.temp_db_file.name):
             os.unlink(self.temp_db_file.name)
 
-    def test_reserve_micropartition_ids(self):
+    async def test_reserve_micropartition_ids(self):
         # Test initial reservation when no IDs exist
-        ids_1 = self.metadata.reserve_micropartition_ids(self.table, 5)
+        ids_1 = await self.metadata.reserve_micropartition_ids(self.table, 5)
         self.assertEqual(len(ids_1), 5)
         self.assertEqual(ids_1, [1, 2, 3, 4, 5])
 
         # Test subsequent reservation
-        ids_2 = self.metadata.reserve_micropartition_ids(self.table, 3)
+        ids_2 = await self.metadata.reserve_micropartition_ids(self.table, 3)
         self.assertEqual(len(ids_2), 3)
         self.assertEqual(ids_2, [6, 7, 8])
 
         # Test reserving a single ID
-        ids_3 = self.metadata.reserve_micropartition_ids(self.table, 1)
+        ids_3 = await self.metadata.reserve_micropartition_ids(self.table, 1)
         self.assertEqual(len(ids_3), 1)
         self.assertEqual(ids_3, [9])
 
         # Test reserving a larger batch
-        ids_4 = self.metadata.reserve_micropartition_ids(self.table, 10)
+        ids_4 = await self.metadata.reserve_micropartition_ids(self.table, 10)
         self.assertEqual(len(ids_4), 10)
         self.assertEqual(ids_4, list(range(10, 20)))
 

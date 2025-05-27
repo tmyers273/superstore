@@ -17,6 +17,7 @@ from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
+from db import Base, create_async_engine
 from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
 from s3 import FakeS3
@@ -429,5 +430,10 @@ async def test_differential_testing_small_fake():
 
 
 async def test_differential_testing_small_sqlite():
-    metadata = SqliteMetadata("sqlite:///:memory:")
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
     await check_differential_small(metadata)

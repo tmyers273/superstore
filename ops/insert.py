@@ -67,7 +67,9 @@ class InsertStrategy(Protocol):
         current_version = await metadata_store.get_table_version(table)
 
         micro_partitions = []
-        reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
+        reserved_ids = await metadata_store.reserve_micropartition_ids(
+            table, len(parts)
+        )
 
         part: io.BytesIO
         key_prefix: str | None
@@ -276,7 +278,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         s3.put_object("bucket", key, parquet_buffer)
         return micro_partition
 
-    def _save_parts_to_s3_and_create_micropartitions(
+    async def _save_parts_to_s3_and_create_micropartitions(
         self,
         table: Table,
         s3: S3Like,
@@ -284,7 +286,9 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         parts: list[tuple[str, pl.DataFrame, io.BytesIO]],
     ) -> list[MicroPartition]:
         """Save parts to S3 and create MicroPartition objects using parallel processing."""
-        reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
+        reserved_ids = await metadata_store.reserve_micropartition_ids(
+            table, len(parts)
+        )
         # s3_save_start = perf_counter()
 
         # Prepare data for parallel processing
@@ -345,7 +349,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
         parts, old_mp_ids = self._generate_replacements(table, s3, res, latest_mps)
 
         # Save parts to S3 and create MicroPartitions
-        new_mps = self._save_parts_to_s3_and_create_micropartitions(
+        new_mps = await self._save_parts_to_s3_and_create_micropartitions(
             table, s3, metadata_store, parts
         )
 

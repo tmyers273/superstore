@@ -100,7 +100,7 @@ async def delete(
         new_mps.append((p.key_prefix, buffer))
 
     replacements: list[MicroPartition] = []
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(new_mps))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(new_mps))
     for i, (key_prefix, buffer) in enumerate(new_mps):
         # Create a new micro partition
         id = reserved_ids[i]
@@ -153,7 +153,7 @@ async def delete_and_add(
 
     # print("In delete and add", new_df)
     dfs = compress(new_df)
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(dfs))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(dfs))
     for i, (df_part, buffer) in enumerate(dfs):
         id = reserved_ids[i]
 
@@ -193,7 +193,7 @@ async def update(
     # Load the parquet file
     replacements: dict[int, MicroPartition] = {}
     # TODO: this reserves far too many ids
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
     async for p in await metadata_store.micropartitions(
         table, s3, version=current_version

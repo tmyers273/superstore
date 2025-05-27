@@ -15,6 +15,7 @@ os.environ["USER_PASSWORD"] = "test123"
 print(f"Test DATA_DIR: {os.environ['DATA_DIR']}")
 
 # Import after setting environment variables
+from db import Base, create_async_engine
 from fake_data import (
     create_fake_tables_and_data,
 )
@@ -28,9 +29,12 @@ async def test_table_creation():
 
     # Initialize metadata store
     data_dir = os.environ["DATA_DIR"]
-    db_path = f"sqlite:///{data_dir}/db.db"
+    db_path = f"sqlite+aiosqlite:///{data_dir}/db.db"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    metadata = SqliteMetadata(db_path)
+    metadata = SqliteMetadata(engine)
 
     try:
         create_fake_tables_and_data(metadata, data_dir)

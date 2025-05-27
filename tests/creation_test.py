@@ -1,4 +1,5 @@
 from classes import ColumnDefinitions, Database, Schema, Table
+from db import Base, create_async_engine
 from metadata import FakeMetadataStore, MetadataStore
 from s3 import FakeS3, S3Like
 from sqlite_metadata import SqliteMetadata
@@ -60,6 +61,11 @@ async def test_table_creation_fake():
 
 
 async def test_table_creation_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata_store = SqliteMetadata(engine)
     s3 = FakeS3()
     await table_creation(metadata_store, s3)

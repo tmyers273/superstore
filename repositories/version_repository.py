@@ -16,10 +16,12 @@ class VersionRepository(Protocol, Generic[SessionT]):
 
     CHECKPOINT_FREQUENCY: int
 
-    def add(self, table: Table, version: int, op: SetOp, session: SessionT) -> None:
+    async def add(
+        self, table: Table, version: int, op: SetOp, session: SessionT
+    ) -> None:
         """Add a new operation at the specified version for the given table."""
         raise NotImplementedError
 
-    def get_hams(self, table: Table, version: int, session: SessionT) -> set[int]:
+    async def get_hams(self, table: Table, version: int, session: SessionT) -> set[int]:
         """Get the set of hams (items) at the specified version for the given table."""
         raise NotImplementedError
