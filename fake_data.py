@@ -340,7 +340,7 @@ async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
         table_s3 = LocalS3(table_s3_path)
 
         # Insert the data
-        insert(created_table, table_s3, metadata, fake_data)
+        await insert(created_table, table_s3, metadata, fake_data)
         print(f"Inserted {len(fake_data)} rows into {table_config['name']}")
 
     print("Fake tables and data creation completed!")

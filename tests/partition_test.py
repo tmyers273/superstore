@@ -34,7 +34,7 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
         }
     )
 
-    insert(table, s3, metadata, df)
+    await insert(table, s3, metadata, df)
 
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
@@ -66,7 +66,7 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
             "clicks2": [50],
         }
     )
-    update(table, s3, metadata, df)
+    await update(table, s3, metadata, df)
 
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
@@ -88,7 +88,7 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
     assert partition_prefixes_after_update == expected_prefixes
 
     # Delete an item from a MP that has multiple items
-    delete(table, s3, metadata, [4])
+    await delete(table, s3, metadata, [4])
 
     # Expect 3 MPs, one for each unique user_id
     assert metadata.micropartition_count(table, s3) == 3
@@ -111,7 +111,7 @@ async def check_partition_keys(metadata: MetadataStore, s3: S3Like):
 
     # Delete an object from an MP with a single item, causing the MP
     # itself to be deleted
-    delete(table, s3, metadata, [3])
+    await delete(table, s3, metadata, [3])
 
     assert metadata.micropartition_count(table, s3) == 2
 

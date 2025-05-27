@@ -30,7 +30,7 @@ class S3Like(Protocol):
     def put_object(self, bucket: str, key: str, body: bytes):
         raise NotImplementedError
 
-    def register_dataset(
+    async def register_dataset(
         self,
         ctx: SessionContext,
         table_name: str,
@@ -44,7 +44,7 @@ class S3Like(Protocol):
         """Register a single dataset with the given SessionContext for querying."""
         raise NotImplementedError
 
-    def register_datasets(
+    async def register_datasets(
         self,
         ctx: SessionContext,
         registrations: list[TableRegistration],
@@ -93,7 +93,7 @@ class FakeS3(S3Like):
 
         self.objects[bucket][key] = body
 
-    def register_dataset(
+    async def register_dataset(
         self,
         ctx: SessionContext,
         table_name: str,
@@ -122,7 +122,7 @@ class FakeS3(S3Like):
         # Store the tmpdir so it can be cleaned up automatically by the finalizer
         self._temp_dirs.append(tmpdir)
 
-    def register_datasets(
+    async def register_datasets(
         self,
         ctx: SessionContext,
         registrations: list[TableRegistration],
@@ -138,7 +138,7 @@ class FakeS3(S3Like):
                 reg.table_name if reg.table_name is not None else reg.table.name
             )
 
-            self.register_dataset(
+            await self.register_dataset(
                 ctx=ctx,
                 table_name=table_name,
                 table=reg.table,

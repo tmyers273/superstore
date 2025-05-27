@@ -27,7 +27,7 @@ class InsertStrategyType(Enum):
     """
 
 
-def insert(
+async def insert(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
     # Sort the incoming items by the sort key, if it exists.
@@ -35,7 +35,7 @@ def insert(
         items = items.sort(table.sort_keys)
 
     strategy = _insert_strategy(table)
-    strategy.insert(table, s3, metadata_store, items)
+    await strategy.insert(table, s3, metadata_store, items)
 
 
 def _build_key(key_values: list[Any], table: Table) -> str:
@@ -46,7 +46,7 @@ def _build_key(key_values: list[Any], table: Table) -> str:
 
 
 class InsertStrategy(Protocol):
-    def insert(
+    async def insert(
         self,
         table: Table,
         s3: S3Like,
@@ -55,7 +55,7 @@ class InsertStrategy(Protocol):
     ):
         raise NotImplementedError()
 
-    def _insert_batch(
+    async def _insert_batch(
         self,
         table: Table,
         s3: S3Like,
@@ -64,7 +64,7 @@ class InsertStrategy(Protocol):
         | list[tuple[str, pl.DataFrame, io.BytesIO]],
     ):
         # Get the current table version number
-        current_version = metadata_store.get_table_version(table)
+        current_version = await metadata_store.get_table_version(table)
 
         micro_partitions = []
         reserved_ids = metadata_store.reserve_micropartition_ids(table, len(parts))
@@ -103,22 +103,24 @@ class InsertStrategy(Protocol):
             micro_partitions.append(micro_partition)
 
         # Update metadata
-        metadata_store.add_micro_partitions(table, current_version, micro_partitions)
+        await metadata_store.add_micro_partitions(
+            table, current_version, micro_partitions
+        )
 
 
 class UnpartitionedInsertStrategy(InsertStrategy):
-    def insert(
+    async def insert(
         self,
         table: Table,
         s3: S3Like,
         metadata_store: MetadataStore,
         items: pl.DataFrame,
     ):
-        self._insert_batch(table, s3, metadata_store, compress(items))
+        await self._insert_batch(table, s3, metadata_store, compress(items))
 
 
 class PartitionedNewFilesInsertStrategy(InsertStrategy):
-    def insert(
+    async def insert(
         self,
         table: Table,
         s3: S3Like,
@@ -139,7 +141,7 @@ class PartitionedNewFilesInsertStrategy(InsertStrategy):
             )
             parts.extend([(key, df) for df in compress(df)])
 
-        self._insert_batch(table, s3, metadata_store, parts)
+        await self._insert_batch(table, s3, metadata_store, parts)
 
 
 class PartitionedAppendInsertStrategy(InsertStrategy):
@@ -319,7 +321,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
 
         return new_mps
 
-    def insert(
+    async def insert(
         self,
         table: Table,
         s3: S3Like,
@@ -331,7 +333,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             raise ValueError(f"Table `{table.name}` has no partition keys")
 
         # Get the current table version number
-        current_version = metadata_store.get_table_version(table)
+        current_version = await metadata_store.get_table_version(table)
 
         # Get the most recent MPs for each partition key
         latest_mps = self._get_most_recent_mps(
@@ -347,7 +349,7 @@ class PartitionedAppendInsertStrategy(InsertStrategy):
             table, s3, metadata_store, parts
         )
 
-        metadata_store.delete_and_add_micro_partitions(
+        await metadata_store.delete_and_add_micro_partitions(
             table, current_version, list(old_mp_ids), new_mps
         )
 

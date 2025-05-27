@@ -61,7 +61,7 @@ class ClusterOp(DifferentialOp):
 
 
 class DifferentialRunner(Protocol):
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         raise NotImplementedError
 
     def check_invariants(self, gen: "OpGenerator"):
@@ -86,7 +86,7 @@ class DifferentialRunnerSqlite(DifferentialRunner):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
 
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
                 with Session(self.engine) as session:
@@ -155,17 +155,17 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
             )
         )
 
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
                 # with timer("fake insert op"):
-                insert(self.table, self.s3, self.metadata, op.df)
+                await insert(self.table, self.s3, self.metadata, op.df)
             case UpdateOp():
                 # with timer("fake update op"):
-                update(self.table, self.s3, self.metadata, op.df)
+                await update(self.table, self.s3, self.metadata, op.df)
             case DeleteOp():
                 # with timer("fake delete op"):
-                delete(self.table, self.s3, self.metadata, op.ids)
+                await delete(self.table, self.s3, self.metadata, op.ids)
             case ClusterOp():
                 cluster(self.metadata, self.s3, self.table)
             case _:
@@ -354,12 +354,12 @@ async def test_differential_testing():
         op = next(gen())
 
         start = perf_counter()
-        fake.apply(op)
+        await fake.apply(op)
         fake_apply_times += perf_counter() - start
         fake.check_invariants(gen)
 
         start = perf_counter()
-        sqlite.apply(op)
+        await sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
         sqlite.check_invariants(gen)
 
@@ -396,12 +396,12 @@ async def check_differential_small(metadata: MetadataStore):
         op = next(gen())
 
         start = perf_counter()
-        fake.apply(op)
+        await fake.apply(op)
         fake_apply_times += perf_counter() - start
         fake.check_invariants(gen)
 
         start = perf_counter()
-        sqlite.apply(op)
+        await sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
         sqlite.check_invariants(gen)
 

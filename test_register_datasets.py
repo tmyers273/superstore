@@ -46,11 +46,11 @@ async def test_single_table_registration():
             {"id": 2, "name": "Bob", "email": "bob@example.com"},
         ]
     )
-    insert(users_table, s3, metadata_store, users_data)
+    await insert(users_table, s3, metadata_store, users_data)
 
     # Test single registration
     ctx = SessionContext()
-    s3.register_dataset(ctx, "users", users_table, metadata_store)
+    await s3.register_dataset(ctx, "users", users_table, metadata_store)
 
     result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
     print(f"Single table columns: {result.columns}")
@@ -113,7 +113,7 @@ async def test_register_datasets_separately():
             {"id": 2, "name": "Bob", "email": "bob@example.com"},
         ]
     )
-    insert(users_table, s3, metadata_store, users_data)
+    await insert(users_table, s3, metadata_store, users_data)
 
     orders_data = pl.DataFrame(
         [
@@ -121,12 +121,12 @@ async def test_register_datasets_separately():
             {"id": 102, "user_id": 2, "product": "Mouse", "amount": 29.99},
         ]
     )
-    insert(orders_table, s3, metadata_store, orders_data)
+    await insert(orders_table, s3, metadata_store, orders_data)
 
     # Register tables separately
     ctx = SessionContext()
-    s3.register_dataset(ctx, "users", users_table, metadata_store)
-    s3.register_dataset(ctx, "orders", orders_table, metadata_store)
+    await s3.register_dataset(ctx, "users", users_table, metadata_store)
+    await s3.register_dataset(ctx, "orders", orders_table, metadata_store)
 
     # Check each table individually
     users_result = ctx.sql("SELECT * FROM users ORDER BY id").to_polars()
@@ -195,7 +195,7 @@ async def test_register_datasets_with_join():
             {"id": 3, "name": "Charlie", "email": "charlie@example.com"},
         ]
     )
-    insert(users_table, s3, metadata_store, users_data)
+    await insert(users_table, s3, metadata_store, users_data)
 
     # Insert test data into orders table
     orders_data = pl.DataFrame(
@@ -207,7 +207,7 @@ async def test_register_datasets_with_join():
             {"id": 105, "user_id": 2, "product": "Headphones", "amount": 149.99},
         ]
     )
-    insert(orders_table, s3, metadata_store, orders_data)
+    await insert(orders_table, s3, metadata_store, orders_data)
 
     # Create registrations for both tables
     registrations = [
@@ -223,7 +223,7 @@ async def test_register_datasets_with_join():
 
     # Register both datasets using the new method
     ctx = SessionContext()
-    registered_names = s3.register_datasets(ctx, registrations, metadata_store)
+    registered_names = await s3.register_datasets(ctx, registrations, metadata_store)
 
     # Verify the registration mapping
     assert registered_names == {"users": "users", "orders": "orders"}
@@ -333,7 +333,7 @@ async def test_register_datasets_with_custom_names():
             {"id": 2, "name": "Widget B", "price": 15.99},
         ]
     )
-    insert(table, s3, metadata_store, data)
+    await insert(table, s3, metadata_store, data)
 
     # Register with custom names
     registrations = [
@@ -348,7 +348,7 @@ async def test_register_datasets_with_custom_names():
     ]
 
     ctx = SessionContext()
-    registered_names = s3.register_datasets(ctx, registrations, metadata_store)
+    registered_names = await s3.register_datasets(ctx, registrations, metadata_store)
 
     # Verify both registrations point to the same source table
     assert registered_names == {

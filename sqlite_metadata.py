@@ -173,7 +173,7 @@ class SqliteMetadata(MetadataStore):
                 return None
             return op.to_set_op()
 
-    def get_table_version(self, table: Table) -> int:
+    async def get_table_version(self, table: Table) -> int:
         with Session(self.engine) as session:
             version = self._get_table_version(session, table)
             session.commit()
@@ -186,7 +186,7 @@ class SqliteMetadata(MetadataStore):
             session.add(table_version)
         return int(table_version.version)
 
-    def add_micro_partitions(
+    async def add_micro_partitions(
         self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
         with Session(self.engine) as session:
@@ -253,7 +253,7 @@ class SqliteMetadata(MetadataStore):
         if rows == 0:
             raise ValueError("Version mismatch")
 
-    def replace_micro_partitions(
+    async def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
@@ -325,9 +325,9 @@ class SqliteMetadata(MetadataStore):
         start = new_max - number + 1
         return list(range(start, new_max + 1))
 
-    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+    async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         if version is None:
-            version = self.get_table_version(table)
+            version = await self.get_table_version(table)
 
         with Session(self.engine) as session:
             return self.version_repo.get_hams(table, version, session)
@@ -336,7 +336,7 @@ class SqliteMetadata(MetadataStore):
         for i in range(0, len(items), chunk_size):
             yield items[i : i + chunk_size]
 
-    def micropartitions(
+    async def micropartitions(
         self,
         table: Table,
         s3: S3Like,
@@ -347,7 +347,7 @@ class SqliteMetadata(MetadataStore):
         if prefix is not None and not prefix.endswith("/"):
             prefix = f"{prefix}/"
 
-        ids = self._get_ids(table, version)
+        ids = await self._get_ids(table, version)
         with Session(self.engine) as session:
             micro_partitions: list[MicroPartitionMetadata] = []
             # print(f"Loading {len(ids)} micro partitions")
@@ -382,7 +382,7 @@ class SqliteMetadata(MetadataStore):
                     key_prefix=mp.key_prefix,
                 )
 
-    def delete_and_add_micro_partitions(
+    async def delete_and_add_micro_partitions(
         self,
         table: Table,
         current_version: int,

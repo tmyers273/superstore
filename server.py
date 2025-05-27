@@ -205,7 +205,7 @@ async def ingest_audit_log_items(limit: int | None = None):
     files.sort(key=extract_number)
 
     table = get_table()
-    create_table_if_needed(metadata)
+    await create_table_if_needed(metadata)
 
     for i, file in enumerate(files):
         if limit is not None and i >= limit:
@@ -216,7 +216,7 @@ async def ingest_audit_log_items(limit: int | None = None):
         df = pl.read_parquet(file)
         df = df.sort(["audit_log_id", "id"])
 
-        insert(table, s3, metadata, df)
+        await insert(table, s3, metadata, df)
         print(f"Inserted {file} with {df.height} rows")
         shutil.move(file, f"/done{file}")
 
@@ -276,7 +276,7 @@ async def audit_log_items_max():
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         max_audit_log_id = ctx.sql(
@@ -293,7 +293,7 @@ async def audit_log_items_total():
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         total = ctx.sql("SELECT count(*) FROM 'audit_log_items'").to_polars()
@@ -352,7 +352,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
     ctx = SessionContext()
 
     try:
-        registered_names = s3_instance.register_datasets(
+        registered_names = await s3_instance.register_datasets(
             ctx, registrations, metadata, with_data=False
         )
 
@@ -394,7 +394,7 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         total = ctx.sql(
@@ -509,7 +509,7 @@ async def ingest_na_sp_traffic(limit: int = 5):
         if i > limit:
             break
 
-        insert(table, s3, metadata, df)
+        await insert(table, s3, metadata, df)
 
         dur = perf_counter() - s
         total_count += df.height

@@ -85,18 +85,18 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_table_version(self, table: Table) -> int:
+    async def get_table_version(self, table: Table) -> int:
         """
         Returns the version of the table.
         """
         raise NotImplementedError
 
-    def add_micro_partitions(
+    async def add_micro_partitions(
         self, table: Table, version: int, micro_partitions: list[MicroPartition]
     ):
         raise NotImplementedError
 
-    def delete_and_add_micro_partitions(
+    async def delete_and_add_micro_partitions(
         self,
         table: Table,
         current_version: int,
@@ -105,7 +105,7 @@ class MetadataStore(Protocol):
     ):
         raise NotImplementedError
 
-    def replace_micro_partitions(
+    async def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
@@ -141,7 +141,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+    async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         """
         Returns the set of micropartition IDs for a table at a given version.
         """
@@ -272,16 +272,16 @@ class FakeMetadataStore(MetadataStore):
 
         return self.ops[table.name][version - 1]
 
-    def get_table_version(self, table: Table) -> int:
+    async def get_table_version(self, table: Table) -> int:
         if table.name not in self.table_versions:
             self.table_versions[table.name] = 0
 
         return self.table_versions[table.name]
 
-    def add_micro_partitions(
+    async def add_micro_partitions(
         self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:
@@ -348,7 +348,7 @@ class FakeMetadataStore(MetadataStore):
                 key_prefix=prefix,
             )
 
-    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+    async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         if version is None:
             return set(self.current_micro_partitions[table.name])
         else:
@@ -372,13 +372,13 @@ class FakeMetadataStore(MetadataStore):
 
         return out
 
-    def replace_micro_partitions(
+    async def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
         replacements: dict[int, MicroPartition],
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:
@@ -415,14 +415,14 @@ class FakeMetadataStore(MetadataStore):
         ]
         self.ops[table.name].append(SetOpReplace(r))
 
-    def delete_and_add_micro_partitions(
+    async def delete_and_add_micro_partitions(
         self,
         table: Table,
         current_version: int,
         delete_ids: list[int],
         new_mps: list[MicroPartition],
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:

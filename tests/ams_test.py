@@ -90,7 +90,7 @@ def cleanup(
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_query_time():
+async def test_query_time():
     os.environ["DATA_DIR"] = "ams_scratch"
 
     start = perf_counter()
@@ -142,7 +142,7 @@ def test_query_time():
 
     start = perf_counter()
     times = {}
-    with build_table(
+    async with build_table(
         table,
         metadata,
         s3,
@@ -185,7 +185,7 @@ def test_query_time():
 
         times["certain_advertiser_specific_dates"] = t.duration_ms
 
-        version = metadata.get_table_version(table)
+        version = await metadata.get_table_version(table)
         print(f"Version: {version}")
         print(df)
         print(times)
@@ -322,7 +322,7 @@ async def test_clustering2() -> None:
 
     df = df.sort(["advertiser_id", "time_window_start"])
     delete_ids = [stat.id for stat in stats_list]
-    delete_and_add(table, s3, metadata, delete_ids, df)
+    await delete_and_add(table, s3, metadata, delete_ids, df)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
@@ -422,7 +422,7 @@ async def test_clustering() -> None:
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_ams():
+async def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
     cleanup(mp_path="ams_scratch/sp-traffic/mps/bucket")
     files = get_parquet_files("./ams")
@@ -432,11 +432,11 @@ def test_ams():
 
     metadata_store = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
-    table = create_table_if_needed(metadata_store)
+    table = await create_table_if_needed(metadata_store)
     print("Table", table)
     # s3 = FakeS3()
 
-    with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+    async with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
         df = df.to_polars()
@@ -459,7 +459,7 @@ def test_ams():
         if i > 40:
             break
 
-        insert(table, s3, metadata_store, df)
+        await insert(table, s3, metadata_store, df)
 
         dur = perf_counter() - s
         total_count += df.height
@@ -476,7 +476,7 @@ def test_ams():
 
     print(f"Total count from parquet files: {total_count}")
 
-    with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+    async with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) as count FROM 'sp-traffic'")
         df = df.to_polars()
