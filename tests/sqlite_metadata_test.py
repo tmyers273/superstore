@@ -4,10 +4,19 @@ import tempfile
 import unittest
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import Session
 
 from classes import Database, Schema, Table
+from db import Base, create_async_engine
 from sqlite_metadata import SqliteMetadata
+
+
+async def _migrate(engine: AsyncEngine):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
 
 
 class TestSqliteMetadata(unittest.TestCase):
@@ -15,10 +24,13 @@ class TestSqliteMetadata(unittest.TestCase):
         # Create a temporary SQLite database
         self.temp_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
         self.temp_db_file.close()
-        self.connection_string = f"sqlite:///{self.temp_db_file.name}"
+        self.connection_string = f"sqlite+aiosqlite:///{self.temp_db_file.name}"
+
+        engine = create_async_engine(self.connection_string)
+        asyncio.run(_migrate(engine))
 
         # Initialize metadata store
-        self.metadata = SqliteMetadata(self.connection_string)
+        self.metadata = SqliteMetadata(engine)
 
         # Create test database, schema, and table
         self.database = asyncio.run(

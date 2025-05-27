@@ -4,6 +4,7 @@ import tempfile
 import pytest
 
 from classes import ColumnDefinitions, Database, Schema, Table, TableStatus
+from db import Base, create_async_engine
 from metadata import FakeMetadataStore
 from sqlite_metadata import SqliteMetadata
 
@@ -16,10 +17,14 @@ class TestDropTable:
         # Create a temporary SQLite database
         with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as temp_db:
             temp_db.close()
-            connection_string = f"sqlite:///{temp_db.name}"
 
             try:
-                metadata = SqliteMetadata(connection_string)
+                db_path = f"sqlite+aiosqlite:///{temp_db.name}"
+                engine = create_async_engine(db_path)
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+
+                metadata = SqliteMetadata(engine)
 
                 # Create test database, schema, and table
                 database = await metadata.create_database(
@@ -131,10 +136,14 @@ class TestDropTable:
         """Test dropping a non-existent table raises an error"""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as temp_db:
             temp_db.close()
-            connection_string = f"sqlite:///{temp_db.name}"
 
             try:
-                metadata = SqliteMetadata(connection_string)
+                db_path = f"sqlite+aiosqlite:///{temp_db.name}"
+                engine = create_async_engine(db_path)
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+
+                metadata = SqliteMetadata(engine)
 
                 # Create a table object that doesn't exist in the database
                 fake_table = Table(

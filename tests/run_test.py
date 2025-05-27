@@ -20,6 +20,7 @@ from classes import (
     Table,
 )
 from compress import compress
+from db import Base, create_async_engine
 from local_s3 import LocalS3
 from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
@@ -632,9 +633,15 @@ async def test_simple_insert_fake():
 
 
 async def test_simple_insert_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
+
     s3 = FakeS3()
-    await simple_insert(metadata_store, s3)
+    await simple_insert(metadata, s3)
 
 
 async def check_statistics(metadata: MetadataStore, s3: S3Like):
@@ -679,9 +686,15 @@ async def test_statistics_fake():
 
 
 async def test_statistics_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
+
     s3 = FakeS3()
-    await check_statistics(metadata_store, s3)
+    await check_statistics(metadata, s3)
 
 
 async def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
@@ -730,9 +743,14 @@ async def test_empty_mps_are_deleted_fake():
 
 
 async def test_empty_mps_are_deleted_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
     s3 = FakeS3()
-    await check_empty_mps_are_deleted(metadata_store, s3)
+    await check_empty_mps_are_deleted(metadata, s3)
 
 
 @pytest.mark.skip(reason="Takes too long to run")
@@ -817,7 +835,12 @@ async def test_build_table_only_includes_active_micropartitions():
         os.makedirs(table_dir, exist_ok=True)
 
         # Use LocalS3 and SqliteMetadata
-        metadata_store = SqliteMetadata(f"sqlite:///{temp_dir}/db.db")
+        db_path = f"sqlite+aiosqlite:///{temp_dir}/db.db"
+        engine = create_async_engine(db_path)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        metadata_store = SqliteMetadata(engine)
         s3 = LocalS3(f"{temp_dir}/test-table/mps")
 
         # Create the database and schema in metadata

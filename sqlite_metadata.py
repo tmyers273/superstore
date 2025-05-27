@@ -417,18 +417,19 @@ class SqliteMetadata(MetadataStore):
                 raise ValueError("Version mismatch")
 
             # Add new micro partition metadata
-            await session.execute(
-                insert(MicroPartitionMetadata),
-                [
-                    {
-                        "id": mp.id,
-                        "table_name": table.name,
-                        "stats": mp.stats.model_dump(),
-                        "key_prefix": mp.key_prefix,
-                    }
-                    for mp in new_mps
-                ],
-            )
+            if len(new_mps) > 0:
+                await session.execute(
+                    insert(MicroPartitionMetadata),
+                    [
+                        {
+                            "id": mp.id,
+                            "table_name": table.name,
+                            "stats": mp.stats.model_dump(),
+                            "key_prefix": mp.key_prefix,
+                        }
+                        for mp in new_mps
+                    ],
+                )
 
             # Add operation using version repository
             op = SetOpDeleteAndAdd((delete_ids, [mp.id for mp in new_mps]))
