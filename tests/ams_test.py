@@ -52,25 +52,25 @@ def get_table() -> Table:
     )
 
 
-def create_table_if_needed(metadata: MetadataStore) -> Table:
-    database = metadata.get_database("ams")
+async def create_table_if_needed(metadata: MetadataStore) -> Table:
+    database = await metadata.get_database("ams")
     if database is None:
-        database = metadata.create_database(Database(id=0, name="ams"))
+        database = await metadata.create_database(Database(id=0, name="ams"))
 
-    schema = metadata.get_schema("default")
+    schema = await metadata.get_schema("default")
     if schema is None:
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )
 
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         table = get_table()
         table.schema_id = schema.id
         table.database_id = database.id
         table.partition_keys = ["advertiser_id"]
         table.sort_keys = ["time_window_start"]
-        table = metadata.create_table(table)
+        table = await metadata.create_table(table)
 
     return table
 
@@ -90,7 +90,7 @@ def cleanup(
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_query_time():
+async def test_query_time():
     os.environ["DATA_DIR"] = "ams_scratch"
 
     start = perf_counter()
@@ -106,7 +106,7 @@ def test_query_time():
     included_ids = []
     paths = []
     data_dir = os.getenv("DATA_DIR")
-    for mp in metadata.micropartitions(
+    async for mp in await metadata.micropartitions(
         table, s3, with_data=False, prefix=f"advertiser_id={search}"
     ):
         cnt += 1
@@ -142,7 +142,7 @@ def test_query_time():
 
     start = perf_counter()
     times = {}
-    with build_table(
+    async with build_table(
         table,
         metadata,
         s3,
@@ -185,7 +185,7 @@ def test_query_time():
 
         times["certain_advertiser_specific_dates"] = t.duration_ms
 
-        version = metadata.get_table_version(table)
+        version = await metadata.get_table_version(table)
         print(f"Version: {version}")
         print(df)
         print(times)
@@ -216,22 +216,22 @@ def test_query_time():
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering3() -> None:
+async def test_clustering3() -> None:
     os.environ["DATA_DIR"] = "ams_scratch"
 
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     table = create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
 
-    cluster(metadata, s3, table)
+    await cluster(metadata, s3, table)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering2() -> None:
+async def test_clustering2() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
 
@@ -240,7 +240,7 @@ def test_clustering2() -> None:
     found = 0
     search = "ENTITY2IMWE41VQFHYI"
     index: int | None = None
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         if index is None:
             for col in mp.stats.columns:
                 if col.name == "advertiser_id":
@@ -322,21 +322,21 @@ def test_clustering2() -> None:
 
     df = df.sort(["advertiser_id", "time_window_start"])
     delete_ids = [stat.id for stat in stats_list]
-    delete_and_add(table, s3, metadata, delete_ids, df)
+    await delete_and_add(table, s3, metadata, delete_ids, df)
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_clustering() -> None:
+async def test_clustering() -> None:
     metadata = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     create_table_if_needed(metadata)
     s3 = LocalS3("ams_scratch/mps")
-    table = metadata.get_table("sp-traffic")
+    table = await metadata.get_table("sp-traffic")
     if table is None:
         raise Exception("Table not found")
 
     stats: dict[int, Statistics] = {}
     print("Loading stats")
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
 
     index = 0
@@ -422,7 +422,7 @@ def test_clustering() -> None:
 
 
 @pytest.mark.skip(reason="Skipping ams test")
-def test_ams():
+async def test_ams():
     os.environ["DATA_DIR"] = "ams_scratch"
     cleanup(mp_path="ams_scratch/sp-traffic/mps/bucket")
     files = get_parquet_files("./ams")
@@ -432,11 +432,11 @@ def test_ams():
 
     metadata_store = SqliteMetadata("sqlite:///ams_scratch/ams.db")
     s3 = LocalS3("ams_scratch/sp-traffic/mps")
-    table = create_table_if_needed(metadata_store)
+    table = await create_table_if_needed(metadata_store)
     print("Table", table)
     # s3 = FakeS3()
 
-    with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+    async with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) FROM 'sp-traffic'")
         df = df.to_polars()
@@ -459,7 +459,7 @@ def test_ams():
         if i > 40:
             break
 
-        insert(table, s3, metadata_store, df)
+        await insert(table, s3, metadata_store, df)
 
         dur = perf_counter() - s
         total_count += df.height
@@ -471,12 +471,12 @@ def test_ams():
         )
 
     stats = {}
-    for mp in metadata_store.micropartitions(table, s3):
+    async for mp in await metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
     print(f"Total count from parquet files: {total_count}")
 
-    with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
+    async with build_table(table, metadata_store, s3, table_name="sp-traffic") as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) as count FROM 'sp-traffic'")
         df = df.to_polars()

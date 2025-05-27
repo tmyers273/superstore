@@ -17,6 +17,7 @@ from sqlalchemy import Column, Integer, String, create_engine, select
 from sqlalchemy.orm import Session, declarative_base
 
 from classes import Database, Schema, Table
+from db import Base, create_async_engine
 from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
 from s3 import FakeS3
@@ -61,10 +62,10 @@ class ClusterOp(DifferentialOp):
 
 
 class DifferentialRunner(Protocol):
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         raise NotImplementedError
 
-    def check_invariants(self, gen: "OpGenerator"):
+    async def check_invariants(self, gen: "OpGenerator"):
         raise NotImplementedError
 
 
@@ -86,7 +87,7 @@ class DifferentialRunnerSqlite(DifferentialRunner):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
 
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
                 with Session(self.engine) as session:
@@ -110,10 +111,10 @@ class DifferentialRunnerSqlite(DifferentialRunner):
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
-    def check_invariants(self, gen: "OpGenerator"):
+    async def check_invariants(self, gen: "OpGenerator"):
         pass
 
-    def all(self) -> list[dict]:
+    async def all(self) -> list[dict]:
         with Session(self.engine) as session:
             stmt = select(self.users).order_by(self.users.id)
             items = session.execute(stmt).scalars().all()
@@ -133,45 +134,49 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
         sort_keys: list[str] | None = None,
     ):
         self.metadata = metadata
+        self.partition_keys = partition_keys
+        self.sort_keys = sort_keys
+
+    async def start(self):
         self.s3 = FakeS3()
 
-        self.db = self.metadata.create_database(Database(id=0, name="test"))
-        self.schema = self.metadata.create_schema(
+        self.db = await self.metadata.create_database(Database(id=0, name="test"))
+        self.schema = await self.metadata.create_schema(
             Schema(id=0, name="test", database_id=self.db.id)
         )
-        self.table = self.metadata.create_table(
+        self.table = await self.metadata.create_table(
             Table(
                 id=0,
                 name="test",
                 database_id=self.db.id,
                 schema_id=self.schema.id,
                 columns=[],
-                partition_keys=partition_keys,
-                sort_keys=sort_keys,
+                partition_keys=self.partition_keys,
+                sort_keys=self.sort_keys,
             )
         )
 
-    def apply(self, op: DifferentialOp):
+    async def apply(self, op: DifferentialOp):
         match op:
             case InsertOp():
                 # with timer("fake insert op"):
-                insert(self.table, self.s3, self.metadata, op.df)
+                await insert(self.table, self.s3, self.metadata, op.df)
             case UpdateOp():
                 # with timer("fake update op"):
-                update(self.table, self.s3, self.metadata, op.df)
+                await update(self.table, self.s3, self.metadata, op.df)
             case DeleteOp():
                 # with timer("fake delete op"):
-                delete(self.table, self.s3, self.metadata, op.ids)
+                await delete(self.table, self.s3, self.metadata, op.ids)
             case ClusterOp():
-                cluster(self.metadata, self.s3, self.table)
+                await cluster(self.metadata, self.s3, self.table)
             case _:
                 raise ValueError(f"Unknown operation: {op}")
 
-    def check_invariants(self, gen: "OpGenerator"):
+    async def check_invariants(self, gen: "OpGenerator"):
         # TODO: if there are partition keys, make sure that all the MPs don't violate
         # TODO: if there are partition keys, make sure all the MPs have the correct prefix
         if self.table.partition_keys:
-            for mp in self.metadata.micropartitions(
+            async for mp in await self.metadata.micropartitions(
                 self.table, self.s3, with_data=False
             ):
                 # Make sure the MP has a key prefix
@@ -206,7 +211,7 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                 assert 1 == cnt, f"Micropartition {key} has duplicate rows\n\n{df}"
 
         if self.table.sort_keys:
-            for mp in self.metadata.micropartitions(
+            async for mp in await self.metadata.micropartitions(
                 self.table, self.s3, with_data=False
             ):
                 # Make sure the MP exists in S3
@@ -223,8 +228,8 @@ class DifferentialRunnerSuperstore(DifferentialRunner):
                     f"Micropartition {key} is not sorted by {self.table.sort_keys}\n\n{df}\n\n{gen.ops}"
                 )
 
-    def all(self) -> list[dict]:
-        df = self.metadata.all(self.table, self.s3)
+    async def all(self) -> list[dict]:
+        df = await self.metadata.all(self.table, self.s3)
         df = df.sort("id")
         return df.to_dicts()
 
@@ -332,12 +337,13 @@ class OpGenerator:
 
 
 @pytest.mark.skip(reason="Takes too long to run")
-def test_differential_testing():
+async def test_differential_testing():
     metadata = SqliteMetadata("sqlite:///:memory:")
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerSuperstore(
         metadata, partition_keys=["account_id"], sort_keys=["id"]
     )
+    await fake.start()
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -349,36 +355,37 @@ def test_differential_testing():
         op = next(gen())
 
         start = perf_counter()
-        fake.apply(op)
+        await fake.apply(op)
         fake_apply_times += perf_counter() - start
-        fake.check_invariants(gen)
+        await fake.check_invariants(gen)
 
         start = perf_counter()
-        sqlite.apply(op)
+        await sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
-        sqlite.check_invariants(gen)
+        await sqlite.check_invariants(gen)
 
         start = perf_counter()
-        fake_res = fake.all()
+        fake_res = await fake.all()
         fake_all_times += perf_counter() - start
 
         start = perf_counter()
-        sqlite_res = sqlite.all()
+        sqlite_res = await sqlite.all()
         sqlite_all_times += perf_counter() - start
 
         assert fake_res == sqlite_res
 
         if i % 100 == 0:
             print(
-                f"Completed {i} ops w/ {len(sqlite_res)} rows and {fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
+                f"Completed {i} ops w/ {len(sqlite_res)} rows and {await fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
             )
 
 
-def check_differential_small(metadata: MetadataStore):
+async def check_differential_small(metadata: MetadataStore):
     sqlite = DifferentialRunnerSqlite()
     fake = DifferentialRunnerSuperstore(
         metadata, partition_keys=["account_id"], sort_keys=["id"]
     )
+    await fake.start()
     gen = OpGenerator()
 
     fake_apply_times = 0
@@ -390,21 +397,21 @@ def check_differential_small(metadata: MetadataStore):
         op = next(gen())
 
         start = perf_counter()
-        fake.apply(op)
+        await fake.apply(op)
         fake_apply_times += perf_counter() - start
-        fake.check_invariants(gen)
+        await fake.check_invariants(gen)
 
         start = perf_counter()
-        sqlite.apply(op)
+        await sqlite.apply(op)
         sqlite_apply_times += perf_counter() - start
-        sqlite.check_invariants(gen)
+        await sqlite.check_invariants(gen)
 
         start = perf_counter()
-        fake_res = fake.all()
+        fake_res = await fake.all()
         fake_all_times += perf_counter() - start
 
         start = perf_counter()
-        sqlite_res = sqlite.all()
+        sqlite_res = await sqlite.all()
         sqlite_all_times += perf_counter() - start
 
         assert fake_res == sqlite_res, (
@@ -413,15 +420,20 @@ def check_differential_small(metadata: MetadataStore):
 
         if i % 100 == 0:
             print(
-                f"Completed {i} ops w/ {len(sqlite_res)} rows and {fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
+                f"Completed {i} ops w/ {len(sqlite_res)} rows and {await fake.metadata.micropartition_count(fake.table, fake.s3)} MPs. fake_apply_time={fake_apply_times:.2f}, sqlite_apply_time={sqlite_apply_times:.2f}, fake_all_time={fake_all_times:.2f}, sqlite_all_time={sqlite_all_times:.2f}"
             )
 
 
-def test_differential_testing_small_fake():
+async def test_differential_testing_small_fake():
     metadata = FakeMetadataStore()
-    check_differential_small(metadata)
+    await check_differential_small(metadata)
 
 
-def test_differential_testing_small_sqlite():
-    metadata = SqliteMetadata("sqlite:///:memory:")
-    check_differential_small(metadata)
+async def test_differential_testing_small_sqlite():
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
+    await check_differential_small(metadata)

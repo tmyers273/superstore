@@ -32,33 +32,33 @@ def get_table() -> Table:
     )
 
 
-def create_table_if_needed(metadata: MetadataStore) -> Table:
-    database = metadata.get_database("db")
+async def create_table_if_needed(metadata: MetadataStore) -> Table:
+    database = await metadata.get_database("db")
     if database is None:
-        database = metadata.create_database(Database(id=0, name="db"))
+        database = await metadata.create_database(Database(id=0, name="db"))
 
-    schema = metadata.get_schema("default")
+    schema = await metadata.get_schema("default")
     if schema is None:
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )
 
-    table = metadata.get_table("audit_log_items")
+    table = await metadata.get_table("audit_log_items")
     if table is None:
         table = get_table()
         table.schema_id = schema.id
         table.database_id = database.id
-        metadata.create_table(table)
+        table = await metadata.create_table(table)
 
     table = get_table()
-    if metadata.get_table(table.name) is None:
-        metadata.create_table(table)
+    if await metadata.get_table(table.name) is None:
+        table = await metadata.create_table(table)
 
     return table
 
 
 @pytest.mark.skip(reason="Skipping audit_log_items test")
-def test_audit_log_items_query():
+async def test_audit_log_items_query():
     table = get_table()
     metadata_store = SqliteMetadata("sqlite:///scratch/audit_log_items/db.db")
     s3 = LocalS3("scratch/audit_log_items/mps")
@@ -69,7 +69,7 @@ def test_audit_log_items_query():
     # for mp in metadata_store.micropartitions(table, s3, with_data=False):
     #     stats = mp.stats
 
-    with build_table(
+    async with build_table(
         table, metadata_store, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         with timer("Total items in `audit_log_items`"):
@@ -90,7 +90,7 @@ def test_audit_log_items_query():
 
 
 @pytest.mark.skip(reason="Skipping audit_log_items test")
-def test_audit_log_items():
+async def test_audit_log_items():
     cleanup(
         mp_path="scratch/audit_log_items/mps", db_path="scratch/audit_log_items/db.db"
     )
@@ -120,10 +120,10 @@ def test_audit_log_items():
         df = pl.read_parquet(file)
         df = df.sort(["audit_log_id", "id"])
 
-        insert(table, s3, metadata_store, df)
+        await insert(table, s3, metadata_store, df)
 
     stats = {}
-    for mp in metadata_store.micropartitions(table, s3):
+    async for mp in await metadata_store.micropartitions(table, s3):
         stats[mp.id] = mp.stats
 
     # for id, stat in stats.items():
@@ -131,7 +131,9 @@ def test_audit_log_items():
     #     stat.dump()
     # break
 
-    with build_table(table, metadata_store, s3, table_name="audit_log_items") as ctx:
+    async with build_table(
+        table, metadata_store, s3, table_name="audit_log_items"
+    ) as ctx:
         s = perf_counter()
         df = ctx.sql("SELECT count(*) FROM 'audit_log_items'")
         df = df.to_polars()

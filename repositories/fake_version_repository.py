@@ -18,16 +18,16 @@ class FakeVersionRepository(VersionRepository[None]):
         self.ops: dict[str, list[SetOp]] = {}
         self.checkpoints: dict[str, list[tuple[int, set[int]]]] = {}
 
-    def add(self, table: Table, version: int, op: SetOp, session: None):
+    async def add(self, table: Table, version: int, op: SetOp, session: None):
         if table.name not in self.ops:
             self.ops[table.name] = []
         self.ops[table.name].append(op)
 
         if version % self.CHECKPOINT_FREQUENCY == 0:
-            self._checkpoint(table, version, session)
+            await self._checkpoint(table, version, session)
 
-    def _checkpoint(self, table: Table, version: int, session: None):
-        hams = self.get_hams(table, version, None)
+    async def _checkpoint(self, table: Table, version: int, session: None):
+        hams = await self.get_hams(table, version, None)
         if table.name not in self.checkpoints:
             self.checkpoints[table.name] = []
         self.checkpoints[table.name].append((version, hams))
@@ -47,7 +47,7 @@ class FakeVersionRepository(VersionRepository[None]):
 
         return None
 
-    def get_hams(self, table: Table, version: int, session: None) -> set[int]:
+    async def get_hams(self, table: Table, version: int, session: None) -> set[int]:
         if table.name not in self.ops:
             return set()
 

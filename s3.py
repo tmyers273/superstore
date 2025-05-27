@@ -30,7 +30,7 @@ class S3Like(Protocol):
     def put_object(self, bucket: str, key: str, body: bytes):
         raise NotImplementedError
 
-    def register_dataset(
+    async def register_dataset(
         self,
         ctx: SessionContext,
         table_name: str,
@@ -44,7 +44,7 @@ class S3Like(Protocol):
         """Register a single dataset with the given SessionContext for querying."""
         raise NotImplementedError
 
-    def register_datasets(
+    async def register_datasets(
         self,
         ctx: SessionContext,
         registrations: list[TableRegistration],
@@ -93,12 +93,12 @@ class FakeS3(S3Like):
 
         self.objects[bucket][key] = body
 
-    def register_dataset(
+    async def register_dataset(
         self,
         ctx: SessionContext,
         table_name: str,
         table: "Table",
-        metadata_store,
+        metadata_store: "MetadataStore",
         version: int | None = None,
         with_data: bool = True,
         included_mp_ids: set[int] | None = None,
@@ -108,7 +108,7 @@ class FakeS3(S3Like):
         # Create a temporary directory that will be cleaned up when the context manager exits
         tmpdir = tempfile.mkdtemp()
 
-        for p in metadata_store.micropartitions(
+        async for p in await metadata_store.micropartitions(
             table, self, version=version, with_data=with_data
         ):
             if included_mp_ids is not None and p.id not in included_mp_ids:
@@ -122,7 +122,7 @@ class FakeS3(S3Like):
         # Store the tmpdir so it can be cleaned up automatically by the finalizer
         self._temp_dirs.append(tmpdir)
 
-    def register_datasets(
+    async def register_datasets(
         self,
         ctx: SessionContext,
         registrations: list[TableRegistration],
@@ -138,7 +138,7 @@ class FakeS3(S3Like):
                 reg.table_name if reg.table_name is not None else reg.table.name
             )
 
-            self.register_dataset(
+            await self.register_dataset(
                 ctx=ctx,
                 table_name=table_name,
                 table=reg.table,

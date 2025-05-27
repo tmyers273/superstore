@@ -2,7 +2,7 @@ import io
 import os
 import random
 import tempfile
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from time import perf_counter
 
@@ -20,6 +20,7 @@ from classes import (
     Table,
 )
 from compress import compress
+from db import Base, create_async_engine
 from local_s3 import LocalS3
 from metadata import FakeMetadataStore, MetadataStore
 from ops.insert import insert
@@ -33,7 +34,9 @@ class Metadata:
     pass
 
 
-def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]):
+async def delete(
+    table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[int]
+):
     if len(pks) == 0:
         return
 
@@ -41,7 +44,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     # TODO: error if pk is not found?
 
     # Get the current table version number
-    current_version = metadata_store.get_table_version(table)
+    current_version = await metadata_store.get_table_version(table)
 
     # Load the parquet file
     new_mps: list[tuple[str | None, io.BytesIO]] = []
@@ -51,7 +54,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
     min_pk_id = min(remaining_pks)
     max_pk_id = max(remaining_pks)
 
-    for p in metadata_store.micropartitions(
+    async for p in await metadata_store.micropartitions(
         table, s3, version=current_version, with_data=False
     ):
         if len(remaining_pks) == 0:
@@ -98,7 +101,7 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         new_mps.append((p.key_prefix, buffer))
 
     replacements: list[MicroPartition] = []
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(new_mps))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(new_mps))
     for i, (key_prefix, buffer) in enumerate(new_mps):
         # Create a new micro partition
         id = reserved_ids[i]
@@ -119,12 +122,12 @@ def delete(table: Table, s3: S3Like, metadata_store: MetadataStore, pks: list[in
         replacements.append(micro_partition)
 
     # Update metadata
-    metadata_store.delete_and_add_micro_partitions(
+    await metadata_store.delete_and_add_micro_partitions(
         table, current_version, old_mp_ids, replacements
     )
 
 
-def delete_and_add(
+async def delete_and_add(
     table: Table,
     s3: S3Like,
     metadata_store: MetadataStore,
@@ -145,13 +148,13 @@ def delete_and_add(
     if table.partition_keys is None and key_prefix is not None:
         raise ValueError("key_prefix is not allowed if table has no partition key")
 
-    current_version = metadata_store.get_table_version(table)
+    current_version = await metadata_store.get_table_version(table)
 
     mps = []
 
     # print("In delete and add", new_df)
     dfs = compress(new_df)
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(dfs))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(dfs))
     for i, (df_part, buffer) in enumerate(dfs):
         id = reserved_ids[i]
 
@@ -173,12 +176,12 @@ def delete_and_add(
         key = f"{key_prefix or ''}{id}"
         s3.put_object("bucket", key, parquet_buffer)
 
-    metadata_store.delete_and_add_micro_partitions(
+    await metadata_store.delete_and_add_micro_partitions(
         table, current_version, delete_ids, mps
     )
 
 
-def update(
+async def update(
     table: Table, s3: S3Like, metadata_store: MetadataStore, items: pl.DataFrame
 ):
     # print(f"[mutation] Updating {len(items)} rows in {table.name}")
@@ -186,14 +189,16 @@ def update(
     # TODO: error if pk is not found?
 
     # Get the current table version number
-    current_version = metadata_store.get_table_version(table)
+    current_version = await metadata_store.get_table_version(table)
 
     # Load the parquet file
     replacements: dict[int, MicroPartition] = {}
     # TODO: this reserves far too many ids
-    reserved_ids = metadata_store.reserve_micropartition_ids(table, len(items))
+    reserved_ids = await metadata_store.reserve_micropartition_ids(table, len(items))
     i = 0
-    for p in metadata_store.micropartitions(table, s3, version=current_version):
+    async for p in await metadata_store.micropartitions(
+        table, s3, version=current_version
+    ):
         df = p.dump()
         updated_items = items.filter(pl.col("id").is_in(df["id"]))
 
@@ -233,11 +238,13 @@ def update(
         i += 1
 
     # Update metadata
-    metadata_store.replace_micro_partitions(table, current_version, replacements)
+    await metadata_store.replace_micro_partitions(table, current_version, replacements)
 
 
-def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
-    version = metadata.get_table_version(table)
+async def _cluster_with_partitions(
+    metadata: MetadataStore, s3: S3Like, table: Table
+) -> None:
+    version = await metadata.get_table_version(table)
 
     # print("Clustering with partitions")
     if table.sort_keys is None or len(table.sort_keys) == 0:
@@ -246,7 +253,9 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
     stats: dict[str, dict[int, Statistics]] = {}
     mps: dict[str, dict[int, MicroPartition]] = {}
 
-    for mp in metadata.micropartitions(table, s3, with_data=False, version=version):
+    async for mp in await metadata.micropartitions(
+        table, s3, with_data=False, version=version
+    ):
         prefix = mp.key_prefix or ""
         if prefix not in stats:
             stats[prefix] = {}
@@ -379,23 +388,23 @@ def _cluster_with_partitions(metadata: MetadataStore, s3: S3Like, table: Table) 
 
         df = df.sort(table.sort_keys)
         delete_ids = [overlap.id for overlap in overlaps]
-        delete_and_add(table, s3, metadata, delete_ids, df, key_prefix=prefix)
+        await delete_and_add(table, s3, metadata, delete_ids, df, key_prefix=prefix)
 
         cnt += 1
         if cnt > 500:
             break
 
 
-def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
+async def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
     if table.sort_keys is None or len(table.sort_keys) == 0:
         raise ValueError("Table has no sort keys")
     if table.partition_keys is not None and len(table.partition_keys) > 0:
-        return _cluster_with_partitions(metadata, s3, table)
+        return await _cluster_with_partitions(metadata, s3, table)
 
     stats: dict[int, Statistics] = {}
     mps: dict[int, MicroPartition] = {}
     # print("Loading stats")
-    for mp in metadata.micropartitions(table, s3, with_data=False):
+    async for mp in await metadata.micropartitions(table, s3, with_data=False):
         stats[mp.id] = mp.stats
         mps[mp.id] = mp
 
@@ -478,11 +487,11 @@ def cluster(metadata: MetadataStore, s3: S3Like, table: Table) -> None:
 
     df = df.sort(table.sort_keys)
     delete_ids = [overlap.id for overlap in overlaps]
-    delete_and_add(table, s3, metadata, delete_ids, df)
+    await delete_and_add(table, s3, metadata, delete_ids, df)
 
 
-@contextmanager
-def build_table(
+@asynccontextmanager
+async def build_table(
     table: Table,
     metadata_store: MetadataStore,
     s3: S3Like,
@@ -494,7 +503,7 @@ def build_table(
 ):
     ctx = SessionContext()
 
-    s3.register_dataset(
+    await s3.register_dataset(
         ctx=ctx,
         table_name=table_name,
         table=table,
@@ -508,7 +517,7 @@ def build_table(
     yield ctx
 
 
-def simple_insert(metadata_store: MetadataStore, s3: S3Like):
+async def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     table = Table(
         id=1,
         schema_id=1,
@@ -528,24 +537,25 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
     ]
     df = pl.DataFrame(users)
 
-    insert(table, s3, metadata_store, df)
+    await insert(table, s3, metadata_store, df)
 
     # Expect the table version to be incremented
-    assert metadata_store.get_table_version(table) == 1
-    assert metadata_store.get_op(table, 1) == SetOpAdd([1])
+    assert await metadata_store.get_table_version(table) == 1
+    assert await metadata_store.get_op(table, 1) == SetOpAdd([1])
 
-    for p in metadata_store.micropartitions(table, s3):
+    async for p in await metadata_store.micropartitions(table, s3):
         assert p.dump().to_dicts() == users
 
     users.append({"id": 4, "name": "Bill Doe", "email": "bill.doe@example.com"})
     users.append({"id": 5, "name": "Bill Smith", "email": "bill.smith@example.com"})
     df = pl.DataFrame(users[3:])
-    insert(table, s3, metadata_store, df)
+    await insert(table, s3, metadata_store, df)
 
-    assert metadata_store.get_table_version(table) == 2
-    assert metadata_store.get_op(table, 2) == SetOpAdd([2])
+    assert await metadata_store.get_table_version(table) == 2
+    assert await metadata_store.get_op(table, 2) == SetOpAdd([2])
 
-    for i, p in enumerate(metadata_store.micropartitions(table, s3)):
+    i = 0
+    async for p in await metadata_store.micropartitions(table, s3):
         if i == 0:
             expected = users[:3]
         elif i == 1:
@@ -557,34 +567,35 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
         assert dump.to_dicts() == expected, (
             f"Mismatch in micro partition #{p.id}\n\nExp: {expected}\n\nGot: {dump}\n\n"
         )
+        i += 1
 
-    assert metadata_store.all(table, s3).to_dicts() == users
+    assert (await metadata_store.all(table, s3)).to_dicts() == users
 
-    delete(table, s3, metadata_store, [3])
-    assert metadata_store.get_table_version(table) == 3
-    assert metadata_store.get_op(table, 3) == SetOpDeleteAndAdd(([1], [3]))
+    await delete(table, s3, metadata_store, [3])
+    assert await metadata_store.get_table_version(table) == 3
+    assert await metadata_store.get_op(table, 3) == SetOpDeleteAndAdd(([1], [3]))
 
-    with build_table(table, metadata_store, s3) as ctx:
+    async with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
         df = df.to_polars()
 
         active_mps = []
-        for p in metadata_store.micropartitions(table, s3):
+        async for p in await metadata_store.micropartitions(table, s3):
             active_mps.append(p.id)
         assert len(df) == 4
         assert [1, 2, 4, 5] == df["id"].to_list()
 
-    update(
+    await update(
         table,
         s3,
         metadata_store,
         pl.DataFrame([{"id": 1, "name": "New Name", "email": "new.email@example.com"}]),
     )
 
-    assert metadata_store.get_table_version(table) == 4
-    assert metadata_store.get_op(table, 4) == SetOpReplace([(3, 4)])
+    assert await metadata_store.get_table_version(table) == 4
+    assert await metadata_store.get_op(table, 4) == SetOpReplace([(3, 4)])
 
-    with build_table(table, metadata_store, s3) as ctx:
+    async with build_table(table, metadata_store, s3) as ctx:
         df = ctx.sql("SELECT * FROM users ORDER BY id asc")
         df = df.to_polars()
 
@@ -607,27 +618,33 @@ def simple_insert(metadata_store: MetadataStore, s3: S3Like):
             {"id": 7, "name": "7", "email": "7@gmail.com"},
         ]
     )
-    delete_and_add(table, s3, metadata_store, [2], replacements)
-    ids = set(metadata_store.all(table, s3)["id"].to_list())
+    await delete_and_add(table, s3, metadata_store, [2], replacements)
+    ids = set((await metadata_store.all(table, s3))["id"].to_list())
     assert ids == {1, 2, 6, 7}
 
-    assert metadata_store.get_table_version(table) == 5
-    assert metadata_store.get_op(table, 5) == SetOpDeleteAndAdd(([2], [5]))
+    assert await metadata_store.get_table_version(table) == 5
+    assert await metadata_store.get_op(table, 5) == SetOpDeleteAndAdd(([2], [5]))
 
 
-def test_simple_insert_fake():
+async def test_simple_insert_fake():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
-    simple_insert(metadata_store, s3)
+    await simple_insert(metadata_store, s3)
 
 
-def test_simple_insert_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+async def test_simple_insert_sqlite():
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
+
     s3 = FakeS3()
-    simple_insert(metadata_store, s3)
+    await simple_insert(metadata, s3)
 
 
-def check_statistics(metadata: MetadataStore, s3: S3Like):
+async def check_statistics(metadata: MetadataStore, s3: S3Like):
     table = Table(
         id=1,
         schema_id=1,
@@ -647,9 +664,9 @@ def check_statistics(metadata: MetadataStore, s3: S3Like):
     ]
     df = pl.DataFrame(users)
 
-    insert(table, s3, metadata, df)
+    await insert(table, s3, metadata, df)
 
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         if mp.id == 0:
             continue
         stats = mp.stats
@@ -662,19 +679,25 @@ def check_statistics(metadata: MetadataStore, s3: S3Like):
         assert id_col.unique_count == 3
 
 
-def test_statistics_fake():
+async def test_statistics_fake():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
-    check_statistics(metadata_store, s3)
+    await check_statistics(metadata_store, s3)
 
 
-def test_statistics_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+async def test_statistics_sqlite():
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
+
     s3 = FakeS3()
-    check_statistics(metadata_store, s3)
+    await check_statistics(metadata, s3)
 
 
-def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
+async def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
     table = Table(
         id=1,
         schema_id=1,
@@ -694,7 +717,7 @@ def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
     ]
     df = pl.DataFrame(users)
 
-    insert(table, s3, metadata, df)
+    await insert(table, s3, metadata, df)
 
     users = [
         {"id": 4, "name": "Bill Doe", "email": "bill.doe@example.com"},
@@ -702,31 +725,36 @@ def check_empty_mps_are_deleted(metadata: MetadataStore, s3: S3Like):
     ]
     df = pl.DataFrame(users)
 
-    insert(table, s3, metadata, df)
+    await insert(table, s3, metadata, df)
 
-    delete(table, s3, metadata, [1, 2, 3])
+    await delete(table, s3, metadata, [1, 2, 3])
 
     ids = set()
-    for mp in metadata.micropartitions(table, s3):
+    async for mp in await metadata.micropartitions(table, s3):
         ids.add(mp.id)
 
     assert ids == {2}
 
 
-def test_empty_mps_are_deleted_fake():
+async def test_empty_mps_are_deleted_fake():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
-    check_empty_mps_are_deleted(metadata_store, s3)
+    await check_empty_mps_are_deleted(metadata_store, s3)
 
 
-def test_empty_mps_are_deleted_sqlite():
-    metadata_store = SqliteMetadata("sqlite:///:memory:")
+async def test_empty_mps_are_deleted_sqlite():
+    db_path = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(db_path)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
     s3 = FakeS3()
-    check_empty_mps_are_deleted(metadata_store, s3)
+    await check_empty_mps_are_deleted(metadata, s3)
 
 
 @pytest.mark.skip(reason="Takes too long to run")
-def test_stress():
+async def test_stress():
     metadata_store = FakeMetadataStore()
     s3 = FakeS3()
 
@@ -770,14 +798,14 @@ def test_stress():
     df = df.with_columns(pl.col("date").cast(pl.Date))
 
     start = perf_counter()
-    insert(table, s3, metadata_store, df)
+    await insert(table, s3, metadata_store, df)
     end = perf_counter()
     print(f"Insert: {end - start} seconds")
 
     cnt = len(metadata_store.current_micro_partitions[table.name])
     print(f"Micro partitions: {cnt}")
 
-    with build_table(table, metadata_store, s3, table_name="perf") as ctx:
+    async with build_table(table, metadata_store, s3, table_name="perf") as ctx:
         start = perf_counter()
         df = ctx.sql("SELECT sum(clicks) as clicks FROM perf")
         end = perf_counter()
@@ -788,7 +816,7 @@ def test_stress():
         assert df.to_dicts()[0]["clicks"] == sum(i["clicks"] for i in items)
 
 
-def test_build_table_only_includes_active_micropartitions():
+async def test_build_table_only_includes_active_micropartitions():
     """
     Test that build_table only includes active micropartitions and ignores
     old/deleted micropartition files that remain on disk.
@@ -807,12 +835,17 @@ def test_build_table_only_includes_active_micropartitions():
         os.makedirs(table_dir, exist_ok=True)
 
         # Use LocalS3 and SqliteMetadata
-        metadata_store = SqliteMetadata(f"sqlite:///{temp_dir}/db.db")
+        db_path = f"sqlite+aiosqlite:///{temp_dir}/db.db"
+        engine = create_async_engine(db_path)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        metadata_store = SqliteMetadata(engine)
         s3 = LocalS3(f"{temp_dir}/test-table/mps")
 
         # Create the database and schema in metadata
-        database = metadata_store.create_database(Database(id=0, name="test_db"))
-        schema = metadata_store.create_schema(
+        database = await metadata_store.create_database(Database(id=0, name="test_db"))
+        schema = await metadata_store.create_schema(
             Schema(id=0, name="default", database_id=database.id)
         )
 
@@ -832,7 +865,7 @@ def test_build_table_only_includes_active_micropartitions():
             ],  # Use partitioning to trigger append strategy
             sort_keys=["id"],
         )
-        table = metadata_store.create_table(table)
+        table = await metadata_store.create_table(table)
 
         # Insert initial data - all in same partition to trigger replacement
         initial_data = pl.DataFrame(
@@ -841,10 +874,12 @@ def test_build_table_only_includes_active_micropartitions():
                 {"id": 2, "name": "Bob", "partition_key": "A"},
             ]
         )
-        insert(table, s3, metadata_store, initial_data)
+        await insert(table, s3, metadata_store, initial_data)
 
         # Verify initial state
-        with build_table(table, metadata_store, s3, table_name="test-table") as ctx:
+        async with build_table(
+            table, metadata_store, s3, table_name="test-table"
+        ) as ctx:
             result = ctx.sql("SELECT COUNT(*) as count FROM 'test-table'").to_polars()
             initial_count = result.to_dicts()[0]["count"]
             assert initial_count == 2, f"Expected 2 rows initially, got {initial_count}"
@@ -857,7 +892,7 @@ def test_build_table_only_includes_active_micropartitions():
                 {"id": 4, "name": "David", "partition_key": "A"},
             ]
         )
-        insert(table, s3, metadata_store, additional_data)
+        await insert(table, s3, metadata_store, additional_data)
 
         # At this point, we should have old micropartition files on disk
         # but only the new/active ones should be included in queries
@@ -870,7 +905,7 @@ def test_build_table_only_includes_active_micropartitions():
                     all_files.append(file)
 
         # Get active micropartition IDs from metadata
-        active_ids = metadata_store._get_ids(table)
+        active_ids = await metadata_store._get_ids(table)
 
         # Verify we have more files on disk than active micropartitions
         # (this confirms old files are still on disk)
@@ -880,7 +915,9 @@ def test_build_table_only_includes_active_micropartitions():
         )
 
         # The key test: build_table should only return data from active micropartitions
-        with build_table(table, metadata_store, s3, table_name="test-table") as ctx:
+        async with build_table(
+            table, metadata_store, s3, table_name="test-table"
+        ) as ctx:
             result = ctx.sql("SELECT COUNT(*) as count FROM 'test-table'").to_polars()
             final_count = result.to_dicts()[0]["count"]
 

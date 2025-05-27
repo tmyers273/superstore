@@ -3,6 +3,7 @@
 Script to check the status of fake data tables.
 """
 
+import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ import server
 from fake_data import get_fake_data_status
 
 
-def main():
+async def main():
     """Check fake data status"""
     print("📊 Checking fake data status...")
     print("=" * 50)
@@ -41,7 +42,7 @@ def main():
         return
 
     try:
-        status = get_fake_data_status(metadata, data_dir)
+        status = await get_fake_data_status(metadata, data_dir)
 
         print("📋 Fake Data Status Report:")
         print(f"Environment: {status['app_env']}")
@@ -95,4 +96,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

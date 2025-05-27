@@ -46,6 +46,7 @@ async def create_db_and_tables():
 
     # Create fake data if in development environment and tables don't exist
     if data_dir is not None:
+        metadata = SqliteMetadata(engine)
         create_fake_tables_and_data(metadata, data_dir)
 
 
@@ -83,14 +84,17 @@ app.add_middleware(
 # table_name = "sp-traffic"
 
 data_dir = os.getenv("DATA_DIR")
+if data_dir is None:
+    raise ValueError("DATA_DIR is not set")
+
 db_file_path = os.path.join(data_dir, "db.db")
-db_path = f"sqlite://{db_file_path}"
+db_path = f"sqlite+aiosqlite:///{db_file_path}"
 s3_path = f"{data_dir}/audit_log_items/mps"
 table_name = "audit_log_items"
 print(f"data_dir: {data_dir}, db_path={db_path}")
 print(f"S3 Path: {s3_path}")
 
-metadata = SqliteMetadata(db_path)
+# metadata = SqliteMetadata(db_path)
 s3 = LocalS3(s3_path)
 
 
@@ -107,7 +111,7 @@ class LoginRequest(BaseModel):
 @app.get("/auth/me")
 async def authenticated_route(user: User = Depends(current_active_user)):
     # DO NOT DELETE
-    user.name = "Demo User"
+    user.name = "Demo User"  # type: ignore
     return user
 
 
@@ -119,12 +123,13 @@ async def login(request: LoginRequest):
 
 @app.delete("/table/{table_id}")
 async def drop_table(table_id: int, user: User = Depends(current_active_user)):
-    table = metadata.get_table_by_id(table_id)
+    metadata = SqliteMetadata(engine)
+    table = await metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 
     try:
-        dropped_table = metadata.drop_table(table)
+        dropped_table = await metadata.drop_table(table)
         return {
             "message": f"Table '{table.name}' has been dropped",
             "table": dropped_table.model_dump(),
@@ -153,8 +158,9 @@ async def table(
     sortDirection: str = "asc",
     user: User = Depends(current_active_user),
 ):
-    print(metadata.get_tables())
-    table = metadata.get_table_by_id(table_id)
+    metadata = SqliteMetadata(engine)
+    print(await metadata.get_tables())
+    table = await metadata.get_table_by_id(table_id)
     if table is None:
         return {"error": "Table not found"}
 
@@ -165,7 +171,9 @@ async def table(
     total_rows = 0
     total_filesize = 0
     all_mps: list[dict] = []
-    for i, mp in enumerate(metadata.micropartitions(table, table_s3, with_data=False)):
+
+    i = 0
+    async for mp in await metadata.micropartitions(table, table_s3, with_data=False):
         raw = mp.model_dump()
         del raw["data"]
         stats = mp.stats
@@ -173,6 +181,7 @@ async def table(
         total_filesize += stats.filesize
         raw["stats"] = stats.model_dump()
         all_mps.append(raw)
+        i += 1
 
     all_mps.sort(key=sort_column_to_key(sortColumn), reverse=sortDirection == "desc")
     skip = (page - 1) * pageSize
@@ -192,6 +201,7 @@ async def table(
 
 @app.get("/ingest/audit-log-items")
 async def ingest_audit_log_items(limit: int | None = None):
+    metadata = SqliteMetadata(engine)
     files = get_parquet_files("/ingest/audit_log_items")
     print("Found", len(files), "parquet files")
 
@@ -205,7 +215,7 @@ async def ingest_audit_log_items(limit: int | None = None):
     files.sort(key=extract_number)
 
     table = get_table()
-    create_table_if_needed(metadata)
+    await create_table_if_needed(metadata)
 
     for i, file in enumerate(files):
         if limit is not None and i >= limit:
@@ -216,7 +226,7 @@ async def ingest_audit_log_items(limit: int | None = None):
         df = pl.read_parquet(file)
         df = df.sort(["audit_log_id", "id"])
 
-        insert(table, s3, metadata, df)
+        await insert(table, s3, metadata, df)
         print(f"Inserted {file} with {df.height} rows")
         shutil.move(file, f"/done{file}")
 
@@ -225,6 +235,8 @@ async def ingest_audit_log_items(limit: int | None = None):
 
 @app.get("/create-table-if-needed/audit-log-items")
 async def create_table_if_needed_audit_log_items():
+    metadata = SqliteMetadata(engine)
+
     def get_table() -> Table:
         return Table(
             id=1,
@@ -242,41 +254,42 @@ async def create_table_if_needed_audit_log_items():
             ],
         )
 
-    def create_table_if_needed(metadata: MetadataStore) -> Table:
-        database = metadata.get_database("db")
+    async def create_table_if_needed(metadata: MetadataStore) -> Table:
+        database = await metadata.get_database("db")
         if database is None:
-            database = metadata.create_database(Database(id=0, name="db"))
+            database = await metadata.create_database(Database(id=0, name="db"))
 
-        schema = metadata.get_schema("default")
+        schema = await metadata.get_schema("default")
         if schema is None:
-            schema = metadata.create_schema(
+            schema = await metadata.create_schema(
                 Schema(id=0, name="default", database_id=database.id)
             )
 
-        table = metadata.get_table("audit_log_items")
+        table = await metadata.get_table("audit_log_items")
         if table is None:
             table = get_table()
             table.schema_id = schema.id
             table.database_id = database.id
-            metadata.create_table(table)
+            await metadata.create_table(table)
 
         table = get_table()
-        if metadata.get_table(table.name) is None:
-            metadata.create_table(table)
+        if await metadata.get_table(table.name) is None:
+            await metadata.create_table(table)
 
         return table
 
-    create_table_if_needed(metadata)
+    await create_table_if_needed(metadata)
     return {"message": "Table created"}
 
 
 @app.get("/max-audit-log-items")
 async def audit_log_items_max():
-    table = metadata.get_table(table_name)
+    metadata = SqliteMetadata(engine)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         max_audit_log_id = ctx.sql(
@@ -289,11 +302,12 @@ async def audit_log_items_max():
 
 @app.get("/total-audit-log-items")
 async def audit_log_items_total():
-    table = metadata.get_table(table_name)
+    metadata = SqliteMetadata(engine)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         total = ctx.sql("SELECT count(*) FROM 'audit_log_items'").to_polars()
@@ -312,6 +326,7 @@ class ExecuteRequest(BaseModel):
 
 @app.post("/execute")
 async def execute(request: ExecuteRequest, user: User = Depends(current_active_user)):
+    metadata = SqliteMetadata(engine)
     s = perf_counter()
 
     # Parse table names - handle both string and list formats
@@ -327,7 +342,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
     # Get all requested tables and validate they exist
     tables = []
     for table_name in table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is None:
             return {"error": f"Table '{table_name}' not found"}
         tables.append(table)
@@ -352,7 +367,7 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
     ctx = SessionContext()
 
     try:
-        registered_names = s3_instance.register_datasets(
+        registered_names = await s3_instance.register_datasets(
             ctx, registrations, metadata, with_data=False
         )
 
@@ -390,11 +405,12 @@ async def execute(request: ExecuteRequest, user: User = Depends(current_active_u
 
 @app.get("/audit-log-items")
 async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
-    table = metadata.get_table(table_name)
+    metadata = SqliteMetadata(engine)
+    table = await metadata.get_table(table_name)
     if table is None:
         return {"error": "Table not found"}
 
-    with build_table(
+    async with build_table(
         table, metadata, s3, table_name="audit_log_items", with_data=False
     ) as ctx:
         total = ctx.sql(
@@ -434,9 +450,10 @@ async def audit_log_items(audit_log_id: int, page: int = 1, per_page: int = 15):
 
 @app.get("/databases")
 async def databases(user: User = Depends(current_active_user)):
-    databases = metadata.get_databases()
-    schemas = metadata.get_schemas()
-    tables = metadata.get_tables()
+    metadata = SqliteMetadata(engine)
+    databases = await metadata.get_databases()
+    schemas = await metadata.get_schemas()
+    tables = await metadata.get_tables()
 
     # Create a nested structure using list comprehensions
     dbs = [
@@ -463,33 +480,35 @@ async def databases(user: User = Depends(current_active_user)):
 
 @app.get("/create-sp-traffic-table")
 async def create_sp_traffic_table(schema_name: str = "na"):
-    db = metadata.get_database("db")
+    metadata = SqliteMetadata(engine)
+    db = await metadata.get_database("db")
     if db is None:
-        db = metadata.create_database(Database(id=0, name="db"))
+        db = await metadata.create_database(Database(id=0, name="db"))
 
-    schema = metadata.get_schema(schema_name)
+    schema = await metadata.get_schema(schema_name)
     if schema is None:
-        schema = metadata.create_schema(
+        schema = await metadata.create_schema(
             Schema(id=0, name=schema_name, database_id=db.id)
         )
 
-    table = metadata.get_table("sp_traffic")
+    table = await metadata.get_table("sp_traffic")
     if table is None:
         table = ams_test.get_table()
         table.id = 0
         table.name = "sp_traffic"
         table.schema_id = schema.id
         table.database_id = db.id
-        metadata.create_table(table)
+        await metadata.create_table(table)
 
     return {"message": "Table created"}
 
 
 @app.get("/ingest-na-sp-traffic")
 async def ingest_na_sp_traffic(limit: int = 5):
+    metadata = SqliteMetadata(engine)
     await create_sp_traffic_table(schema_name="na")
 
-    table = metadata.get_table("sp_traffic")
+    table = await metadata.get_table("sp_traffic")
     if table is None:
         raise Exception("Table not found")
 
@@ -509,7 +528,7 @@ async def ingest_na_sp_traffic(limit: int = 5):
         if i > limit:
             break
 
-        insert(table, s3, metadata, df)
+        await insert(table, s3, metadata, df)
 
         dur = perf_counter() - s
         total_count += df.height
@@ -529,6 +548,7 @@ async def ingest_na_sp_traffic(limit: int = 5):
 
 @app.post("/dev/create-fake-data")
 async def create_fake_data_endpoint(user: User = Depends(current_active_user)):
+    metadata = SqliteMetadata(engine)
     """Manually trigger fake data creation (dev environment only)"""
     if os.getenv("APP_ENV") != "dev":
         return {"error": "This endpoint is only available in development environment"}
@@ -537,7 +557,7 @@ async def create_fake_data_endpoint(user: User = Depends(current_active_user)):
         return {"error": "DATA_DIR is not configured"}
 
     try:
-        create_fake_tables_and_data(metadata, data_dir)
+        await create_fake_tables_and_data(metadata, data_dir)
         return {"message": "Fake tables and data created successfully"}
     except Exception as e:
         return {"error": f"Failed to create fake data: {str(e)}"}
@@ -545,6 +565,7 @@ async def create_fake_data_endpoint(user: User = Depends(current_active_user)):
 
 @app.delete("/dev/reset-fake-data")
 async def reset_fake_data_endpoint(user: User = Depends(current_active_user)):
+    metadata = SqliteMetadata(engine)
     """Reset fake data by dropping and recreating tables (dev environment only)"""
     if os.getenv("APP_ENV") != "dev":
         return {"error": "This endpoint is only available in development environment"}
@@ -553,7 +574,7 @@ async def reset_fake_data_endpoint(user: User = Depends(current_active_user)):
         return {"error": "DATA_DIR is not configured"}
 
     try:
-        result = reset_fake_data(metadata, data_dir)
+        result = await reset_fake_data(metadata, data_dir)
         return {"message": "Fake data reset successfully", **result}
     except Exception as e:
         return {"error": f"Failed to reset fake data: {str(e)}"}
@@ -561,6 +582,7 @@ async def reset_fake_data_endpoint(user: User = Depends(current_active_user)):
 
 @app.get("/dev/fake-data-status")
 async def fake_data_status_endpoint(user: User = Depends(current_active_user)):
+    metadata = SqliteMetadata(engine)
     """Check the status of fake data tables (dev environment only)"""
     if os.getenv("APP_ENV") != "dev":
         return {"error": "This endpoint is only available in development environment"}
@@ -569,7 +591,7 @@ async def fake_data_status_endpoint(user: User = Depends(current_active_user)):
         return {"error": "DATA_DIR is not configured"}
 
     try:
-        return get_fake_data_status(metadata, data_dir)
+        return await get_fake_data_status(metadata, data_dir)
     except Exception as e:
         return {"error": f"Failed to get fake data status: {str(e)}"}
 

@@ -1,4 +1,4 @@
-from typing import Generator, Protocol
+from typing import AsyncGenerator, Protocol
 
 import polars as pl
 
@@ -10,61 +10,61 @@ from set.set_ops import SetOp, SetOpAdd, SetOpDeleteAndAdd, SetOpReplace, apply
 
 
 class MetadataStore(Protocol):
-    def create_database(self, database: Database) -> Database:
+    async def create_database(self, database: Database) -> Database:
         """
         Create a new database.
         """
         raise NotImplementedError
 
-    def get_databases(self) -> list[Database]:
+    async def get_databases(self) -> list[Database]:
         """
         Returns a list of all the databases.
         """
         raise NotImplementedError
 
-    def get_database(self, name: str) -> Database | None:
+    async def get_database(self, name: str) -> Database | None:
         """
         Returns the database with the given name.
         """
         raise NotImplementedError
 
-    def create_schema(self, schema: Schema) -> Schema:
+    async def create_schema(self, schema: Schema) -> Schema:
         """
         Create a new schema.
         """
         raise NotImplementedError
 
-    def get_schemas(self) -> list[Schema]:
+    async def get_schemas(self) -> list[Schema]:
         """
         Returns a list of all the schemas.
         """
         raise NotImplementedError
 
-    def get_schema(self, name: str) -> Schema | None:
+    async def get_schema(self, name: str) -> Schema | None:
         """
         Returns the schema with the given name.
         """
         raise NotImplementedError
 
-    def create_table(self, table: Table) -> Table:
+    async def create_table(self, table: Table) -> Table:
         """
         Create a new table.
         """
         raise NotImplementedError
 
-    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+    async def get_tables(self, include_dropped: bool = False) -> list[Table]:
         """
         Returns a list of all the tables.
         """
         raise NotImplementedError
 
-    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+    async def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         """
         Returns the table with the given name.
         """
         raise NotImplementedError
 
-    def get_table_by_id(
+    async def get_table_by_id(
         self, table_id: int, include_dropped: bool = False
     ) -> Table | None:
         """
@@ -72,31 +72,31 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def drop_table(self, table: Table) -> Table:
+    async def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
         This preserves all operations and micropartitions for historical purposes.
         """
         raise NotImplementedError
 
-    def get_op(self, table: Table, version: int) -> SetOp | None:
+    async def get_op(self, table: Table, version: int) -> SetOp | None:
         """
         Returns the operation for the table at the given version.
         """
         raise NotImplementedError
 
-    def get_table_version(self, table: Table) -> int:
+    async def get_table_version(self, table: Table) -> int:
         """
         Returns the version of the table.
         """
         raise NotImplementedError
 
-    def add_micro_partitions(
+    async def add_micro_partitions(
         self, table: Table, version: int, micro_partitions: list[MicroPartition]
     ):
         raise NotImplementedError
 
-    def delete_and_add_micro_partitions(
+    async def delete_and_add_micro_partitions(
         self,
         table: Table,
         current_version: int,
@@ -105,7 +105,7 @@ class MetadataStore(Protocol):
     ):
         raise NotImplementedError
 
-    def replace_micro_partitions(
+    async def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
@@ -121,19 +121,20 @@ class MetadataStore(Protocol):
 
         raise NotImplementedError
 
-    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+    async def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         """
         Reserve a list of micropartition ids for a table.
         """
         raise NotImplementedError
 
-    def micropartitions(
+    async def micropartitions(
         self,
         table: Table,
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> Generator[MicroPartition, None, None]:
+        prefix: str | None = None,
+    ) -> AsyncGenerator[MicroPartition, None]:
         """
         A generator that loops through all the micro partitions for a table.
 
@@ -141,26 +142,26 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+    async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         """
         Returns the set of micropartition IDs for a table at a given version.
         """
         raise NotImplementedError
 
-    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+    async def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
         """
         raise NotImplementedError
 
-    def micropartition_count(
+    async def micropartition_count(
         self, table: Table, s3: S3Like, version: int | None = None
     ) -> int:
         """
         Returns the number of micropartitions for a table at a given version.
         """
         cnt = 0
-        for _ in self.micropartitions(table, s3, version):
+        async for _ in await self.micropartitions(table, s3, version):
             cnt += 1
         return cnt
 
@@ -200,40 +201,40 @@ class FakeMetadataStore(MetadataStore):
         Keyed by the table name, then the table.
         """
 
-    def create_database(self, database: Database) -> Database:
+    async def create_database(self, database: Database) -> Database:
         database.id = len(self.databases) + 1
         self.databases[database.name] = database
         return database
 
-    def get_databases(self) -> list[Database]:
+    async def get_databases(self) -> list[Database]:
         return list(self.databases.values())
 
-    def get_database(self, name: str) -> Database | None:
+    async def get_database(self, name: str) -> Database | None:
         return self.databases.get(name)
 
-    def create_schema(self, schema: Schema) -> Schema:
+    async def create_schema(self, schema: Schema) -> Schema:
         schema.id = len(self.schemas) + 1
         self.schemas[schema.name] = schema
         return schema
 
-    def get_schemas(self) -> list[Schema]:
+    async def get_schemas(self) -> list[Schema]:
         return list(self.schemas.values())
 
-    def get_schema(self, name: str) -> Schema | None:
+    async def get_schema(self, name: str) -> Schema | None:
         return self.schemas.get(name)
 
-    def create_table(self, table: Table) -> Table:
+    async def create_table(self, table: Table) -> Table:
         table.id = len(self.tables) + 1
         self.tables[table.name] = table
         return table
 
-    def get_tables(self, include_dropped: bool = False) -> list[Table]:
+    async def get_tables(self, include_dropped: bool = False) -> list[Table]:
         tables = list(self.tables.values())
         if not include_dropped:
             tables = [t for t in tables if t.status == TableStatus.ACTIVE]
         return tables
 
-    def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
+    async def get_table(self, name: str, include_dropped: bool = False) -> Table | None:
         table = self.tables.get(name)
         if table is None:
             return None
@@ -241,7 +242,7 @@ class FakeMetadataStore(MetadataStore):
             return None
         return table
 
-    def get_table_by_id(
+    async def get_table_by_id(
         self, table_id: int, include_dropped: bool = False
     ) -> Table | None:
         for table in self.tables.values():
@@ -250,7 +251,7 @@ class FakeMetadataStore(MetadataStore):
                     return table
         return None
 
-    def drop_table(self, table: Table) -> Table:
+    async def drop_table(self, table: Table) -> Table:
         """
         Drop a table by changing its status to 'dropped'.
         This preserves all operations and micropartitions for historical purposes.
@@ -263,7 +264,7 @@ class FakeMetadataStore(MetadataStore):
         self.tables[table.name] = updated_table
         return updated_table
 
-    def get_op(self, table: Table, version: int) -> SetOp | None:
+    async def get_op(self, table: Table, version: int) -> SetOp | None:
         if table.name not in self.ops:
             return None
 
@@ -272,16 +273,16 @@ class FakeMetadataStore(MetadataStore):
 
         return self.ops[table.name][version - 1]
 
-    def get_table_version(self, table: Table) -> int:
+    async def get_table_version(self, table: Table) -> int:
         if table.name not in self.table_versions:
             self.table_versions[table.name] = 0
 
         return self.table_versions[table.name]
 
-    def add_micro_partitions(
+    async def add_micro_partitions(
         self, table: Table, current_version: int, micro_partitions: list[MicroPartition]
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:
@@ -303,52 +304,53 @@ class FakeMetadataStore(MetadataStore):
         self.ops[table.name].append(SetOpAdd(ids))
         self.current_micro_partitions[table.name].extend(ids)
 
-    def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
+    async def reserve_micropartition_ids(self, table: Table, number: int) -> list[int]:
         start = self.global_micropartition_id_counter + 1
         end = start + number
         self.global_micropartition_id_counter = end - 1
         return list(range(start, end))
 
-    def micropartitions(
+    async def micropartitions(
         self,
         table: Table,
         s3: S3Like,
         version: int | None = None,
         with_data: bool = True,
-    ) -> Generator[MicroPartition, None, None]:
-        if version is None:
-            if table.name not in self.current_micro_partitions:
-                raise ValueError(f"Table {table.name} has no micro partitions")
+        prefix: str | None = None,
+    ) -> AsyncGenerator[MicroPartition, None]:
+        async def _generator():
+            if version is None:
+                if table.name not in self.current_micro_partitions:
+                    raise ValueError(f"Table {table.name} has no micro partitions")
+                micropartitions = self.current_micro_partitions[table.name]
+            else:
+                if table.name not in self.ops:
+                    return
+                if len(self.ops[table.name]) < version:
+                    raise ValueError(f"Version {version} not found")
+                micropartitions = list(apply(set(), self.ops[table.name][:version]))
 
-            micropartitions = self.current_micro_partitions[table.name]
-        else:
-            if table.name not in self.ops:
-                return
-            if len(self.ops[table.name]) < version:
-                raise ValueError(f"Version {version} not found")
+            for micro_partition_id in micropartitions:
+                metadata = self.raw_micro_partitions[micro_partition_id]
+                micro_partition_raw = None
+                prefix = metadata.get("key_prefix", None) or ""
+                if with_data == True:
+                    key = f"{prefix}{metadata['id']}"
+                    micro_partition_raw = s3.get_object("bucket", key)
+                    if micro_partition_raw is None:
+                        raise ValueError(f"Micro partition `{key}` not found")
 
-            micropartitions = list(apply(set(), self.ops[table.name][:version]))
+                yield MicroPartition(
+                    id=metadata["id"],
+                    header=metadata["header"],
+                    data=micro_partition_raw,
+                    stats=metadata["stats"],
+                    key_prefix=prefix,
+                )
 
-        for micro_partition_id in micropartitions:
-            metadata = self.raw_micro_partitions[micro_partition_id]
+        return _generator()
 
-            micro_partition_raw = None
-            prefix = metadata.get("key_prefix", None) or ""
-            if with_data == True:
-                key = f"{prefix}{metadata['id']}"
-                micro_partition_raw = s3.get_object("bucket", key)
-                if micro_partition_raw is None:
-                    raise ValueError(f"Micro partition `{key}` not found")
-
-            yield MicroPartition(
-                id=metadata["id"],
-                header=metadata["header"],
-                data=micro_partition_raw,
-                stats=metadata["stats"],
-                key_prefix=prefix,
-            )
-
-    def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
+    async def _get_ids(self, table: Table, version: int | None = None) -> set[int]:
         if version is None:
             return set(self.current_micro_partitions[table.name])
         else:
@@ -359,12 +361,12 @@ class FakeMetadataStore(MetadataStore):
 
             return set(apply(set(), self.ops[table.name][:version]))
 
-    def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
+    async def all(self, table: Table, s3: S3Like) -> pl.DataFrame | None:
         """
         Returns a dataframe containing all the data for the table.
         """
         out: pl.DataFrame | None = None
-        for metadata in self.micropartitions(table, s3):
+        async for metadata in await self.micropartitions(table, s3):
             if out is None:
                 out = metadata.dump()
             else:
@@ -372,13 +374,13 @@ class FakeMetadataStore(MetadataStore):
 
         return out
 
-    def replace_micro_partitions(
+    async def replace_micro_partitions(
         self,
         table: Table,
         current_version: int,
         replacements: dict[int, MicroPartition],
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:
@@ -415,14 +417,14 @@ class FakeMetadataStore(MetadataStore):
         ]
         self.ops[table.name].append(SetOpReplace(r))
 
-    def delete_and_add_micro_partitions(
+    async def delete_and_add_micro_partitions(
         self,
         table: Table,
         current_version: int,
         delete_ids: list[int],
         new_mps: list[MicroPartition],
     ):
-        if self.get_table_version(table) != current_version:
+        if await self.get_table_version(table) != current_version:
             raise ValueError("Version mismatch")
 
         if table.name not in self.current_micro_partitions:

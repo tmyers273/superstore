@@ -37,7 +37,7 @@ class LocalS3(S3Like):
         with open(os.path.join(full_path, key_name + ".parquet"), "wb") as f:
             f.write(data)
 
-    def register_dataset(
+    async def register_dataset(
         self,
         ctx: SessionContext,
         table_name: str,
@@ -54,7 +54,7 @@ class LocalS3(S3Like):
             s = perf_counter()
 
             if included_mp_ids is None:
-                ids = metadata_store._get_ids(table, version)
+                ids = await metadata_store._get_ids(table, version)
                 for id in ids:
                     if included_mp_ids is not None and id not in included_mp_ids:
                         continue
@@ -102,7 +102,7 @@ class LocalS3(S3Like):
         e = perf_counter()
         print(f"    Time to register dataset: {(e - s) * 1000} ms")
 
-    def register_datasets(
+    async def register_datasets(
         self,
         ctx: SessionContext,
         registrations: list[TableRegistration],
@@ -118,7 +118,7 @@ class LocalS3(S3Like):
                 reg.table_name if reg.table_name is not None else reg.table.name
             )
 
-            self.register_dataset(
+            await self.register_dataset(
                 ctx=ctx,
                 table_name=table_name,
                 table=reg.table,

@@ -1,7 +1,7 @@
 from typing import Any
 
 from sqlalchemy import Engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from classes import Table
 from db import Operation, OperationSnapshot
@@ -10,13 +10,15 @@ from set.set_ops import SetOp, apply
 from .version_repository import VersionRepository
 
 
-class SqliteVersionRepository(VersionRepository[Session]):
+class SqliteVersionRepository(VersionRepository[AsyncSession]):
     CHECKPOINT_FREQUENCY = 1024
 
     def __init__(self, engine: Engine):
         self.engine = engine
 
-    def add(self, table: Table, version: int, op: SetOp, session: Session) -> None:
+    async def add(
+        self, table: Table, version: int, op: SetOp, session: AsyncSession
+    ) -> None:
         # Convert SetOp to operation data
         operation_type, data = self._set_op_to_operation_data(op)
 
@@ -31,20 +33,24 @@ class SqliteVersionRepository(VersionRepository[Session]):
 
         # Create checkpoint if needed
         if version % self.CHECKPOINT_FREQUENCY == 0:
-            self._checkpoint(session, table, version)
+            await self._checkpoint(session, table, version)
 
-    def get_hams(self, table: Table, version: int, session: Session) -> set[int]:
+    async def get_hams(
+        self, table: Table, version: int, session: AsyncSession
+    ) -> set[int]:
         # Find the highest checkpoint <= version
-        checkpoint = self._highest_checkpoint(session, table, version)
+        checkpoint = await self._highest_checkpoint(session, table, version)
 
         if checkpoint is not None:
             checkpoint_version, hams = checkpoint
             # Get operations from checkpoint to target version
-            ops = self._get_ops_range(session, table, checkpoint_version + 1, version)
+            ops = await self._get_ops_range(
+                session, table, checkpoint_version + 1, version
+            )
         else:
             hams = set()
             # Get all operations from 0 to target version
-            ops = self._get_ops_range(session, table, 0, version)
+            ops = await self._get_ops_range(session, table, 0, version)
 
         return apply(hams, ops)
 
@@ -63,9 +69,9 @@ class SqliteVersionRepository(VersionRepository[Session]):
         else:
             raise ValueError(f"Unknown SetOp type: {type(op)}")
 
-    def _checkpoint(self, session: Session, table: Table, version: int):
+    async def _checkpoint(self, session: AsyncSession, table: Table, version: int):
         """Create a checkpoint at the given version"""
-        hams = self._calculate_hams_at_version(session, table, version)
+        hams = await self._calculate_hams_at_version(session, table, version)
 
         snapshot = OperationSnapshot(
             table_name=table.name,
@@ -74,15 +80,15 @@ class SqliteVersionRepository(VersionRepository[Session]):
         )
         session.add(snapshot)
 
-    def _calculate_hams_at_version(
-        self, session: Session, table: Table, version: int
+    async def _calculate_hams_at_version(
+        self, session: AsyncSession, table: Table, version: int
     ) -> set[int]:
         """Calculate the hams at a specific version by applying all operations up to that point"""
-        ops = self._get_ops_range(session, table, 0, version)
+        ops = await self._get_ops_range(session, table, 0, version)
         return apply(set(), ops)
 
-    def _highest_checkpoint(
-        self, session: Session, table: Table, version: int
+    async def _highest_checkpoint(
+        self, session: AsyncSession, table: Table, version: int
     ) -> None | tuple[int, set[int]]:
         """Find the highest checkpoint <= version"""
         stmt = (
@@ -93,14 +99,14 @@ class SqliteVersionRepository(VersionRepository[Session]):
             .limit(1)
         )
 
-        snapshot = session.execute(stmt).scalars().one_or_none()
+        snapshot = (await session.execute(stmt)).scalars().one_or_none()
         if snapshot is None:
             return None
 
         return (int(snapshot.version), set(snapshot.data))
 
-    def _get_ops_range(
-        self, session: Session, table: Table, start_version: int, end_version: int
+    async def _get_ops_range(
+        self, session: AsyncSession, table: Table, start_version: int, end_version: int
     ) -> list[SetOp]:
         """Get operations in version range [start_version, end_version] inclusive"""
         stmt = (
@@ -111,5 +117,5 @@ class SqliteVersionRepository(VersionRepository[Session]):
             .order_by(Operation.version)
         )
 
-        operations = session.execute(stmt).scalars().all()
+        operations = (await session.execute(stmt)).scalars().all()
         return [op.to_set_op() for op in operations]

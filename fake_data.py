@@ -271,36 +271,36 @@ def get_fake_table_names():
     return [config["name"] for config in get_fake_tables_config()]
 
 
-def check_fake_tables_exist(metadata: MetadataStore) -> bool:
+async def check_fake_tables_exist(metadata: MetadataStore) -> bool:
     """Check if any fake tables already exist"""
     fake_table_names = get_fake_table_names()
     for table_name in fake_table_names:
-        if metadata.get_table(table_name) is not None:
+        if await metadata.get_table(table_name) is not None:
             return True
     return False
 
 
-def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
+async def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     """Create fake tables and data for development environment"""
     if os.getenv("APP_ENV") != "dev":
         print("Not in dev environment, skipping fake data creation")
         return
 
     # Check if fake tables already exist
-    if check_fake_tables_exist(metadata):
+    if await check_fake_tables_exist(metadata):
         print("Fake tables already exist, skipping fake data creation")
         return
 
     print("Creating fake tables and data for development...")
 
     # Create development database and schema
-    dev_db = metadata.get_database("development")
+    dev_db = await metadata.get_database("development")
     if dev_db is None:
-        dev_db = metadata.create_database(Database(id=0, name="development"))
+        dev_db = await metadata.create_database(Database(id=0, name="development"))
 
-    dev_schema = metadata.get_schema("dev_schema")
+    dev_schema = await metadata.get_schema("dev_schema")
     if dev_schema is None:
-        dev_schema = metadata.create_schema(
+        dev_schema = await metadata.create_schema(
             Schema(id=0, name="dev_schema", database_id=dev_db.id)
         )
 
@@ -310,7 +310,7 @@ def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
     # Create tables and insert data
     for table_config in fake_tables_config:
         # Check if table already exists (double-check)
-        existing_table = metadata.get_table(table_config["name"])
+        existing_table = await metadata.get_table(table_config["name"])
         if existing_table is not None:
             print(f"Table {table_config['name']} already exists, skipping...")
             continue
@@ -326,7 +326,7 @@ def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
             sort_keys=table_config.get("sort_keys", []),
         )
 
-        created_table = metadata.create_table(table)
+        created_table = await metadata.create_table(table)
         print(f"Created table: {created_table.name}")
 
         # Generate and insert fake data
@@ -340,13 +340,13 @@ def create_fake_tables_and_data(metadata: MetadataStore, data_dir: str):
         table_s3 = LocalS3(table_s3_path)
 
         # Insert the data
-        insert(created_table, table_s3, metadata, fake_data)
+        await insert(created_table, table_s3, metadata, fake_data)
         print(f"Inserted {len(fake_data)} rows into {table_config['name']}")
 
     print("Fake tables and data creation completed!")
 
 
-def reset_fake_data(metadata: MetadataStore, data_dir: str):
+async def reset_fake_data(metadata: MetadataStore, data_dir: str):
     """Reset fake data by dropping and recreating tables"""
     if os.getenv("APP_ENV") != "dev":
         raise ValueError("This function is only available in development environment")
@@ -355,19 +355,21 @@ def reset_fake_data(metadata: MetadataStore, data_dir: str):
 
     dropped_tables = []
     for table_name in fake_table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is not None:
-            metadata.drop_table(table)
+            await metadata.drop_table(table)
             dropped_tables.append(table_name)
             print(f"Dropped table: {table_name}")
 
     # Recreate the fake data
-    create_fake_tables_and_data(metadata, data_dir)
+    await create_fake_tables_and_data(metadata, data_dir)
 
     return {"dropped_tables": dropped_tables, "recreated_tables": fake_table_names}
 
 
-def get_fake_data_status(metadata: MetadataStore, data_dir: str) -> Dict[str, Any]:
+async def get_fake_data_status(
+    metadata: MetadataStore, data_dir: str
+) -> Dict[str, Any]:
     """Get status of all fake data tables"""
     if os.getenv("APP_ENV") != "dev":
         raise ValueError("This function is only available in development environment")
@@ -377,7 +379,7 @@ def get_fake_data_status(metadata: MetadataStore, data_dir: str) -> Dict[str, An
     status: Dict[str, Any] = {"app_env": os.getenv("APP_ENV"), "tables": {}}
 
     for table_name in fake_table_names:
-        table = metadata.get_table(table_name)
+        table = await metadata.get_table(table_name)
         if table is not None:
             # Get table statistics
             try:

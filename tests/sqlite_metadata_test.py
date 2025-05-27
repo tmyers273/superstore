@@ -1,12 +1,22 @@
+import asyncio
 import os
 import tempfile
 import unittest
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import Session
 
 from classes import Database, Schema, Table
+from db import Base, create_async_engine
 from sqlite_metadata import SqliteMetadata
+
+
+async def _migrate(engine: AsyncEngine):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    metadata = SqliteMetadata(engine)
 
 
 class TestSqliteMetadata(unittest.TestCase):
@@ -14,23 +24,32 @@ class TestSqliteMetadata(unittest.TestCase):
         # Create a temporary SQLite database
         self.temp_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
         self.temp_db_file.close()
-        self.connection_string = f"sqlite:///{self.temp_db_file.name}"
+        self.connection_string = f"sqlite+aiosqlite:///{self.temp_db_file.name}"
+
+        engine = create_async_engine(self.connection_string)
+        asyncio.run(_migrate(engine))
 
         # Initialize metadata store
-        self.metadata = SqliteMetadata(self.connection_string)
+        self.metadata = SqliteMetadata(engine)
 
         # Create test database, schema, and table
-        self.database = self.metadata.create_database(Database(id=0, name="test_db"))
-        self.schema = self.metadata.create_schema(
-            Schema(id=0, name="test_schema", database_id=self.database.id)
+        self.database = asyncio.run(
+            self.metadata.create_database(Database(id=0, name="test_db"))
         )
-        self.table = self.metadata.create_table(
-            Table(
-                id=0,
-                name="test_table",
-                schema_id=self.schema.id,
-                database_id=self.database.id,
-                columns=[],
+        self.schema = asyncio.run(
+            self.metadata.create_schema(
+                Schema(id=0, name="test_schema", database_id=self.database.id)
+            )
+        )
+        self.table = asyncio.run(
+            self.metadata.create_table(
+                Table(
+                    id=0,
+                    name="test_table",
+                    schema_id=self.schema.id,
+                    database_id=self.database.id,
+                    columns=[],
+                )
             )
         )
 
@@ -39,24 +58,24 @@ class TestSqliteMetadata(unittest.TestCase):
         if os.path.exists(self.temp_db_file.name):
             os.unlink(self.temp_db_file.name)
 
-    def test_reserve_micropartition_ids(self):
+    async def test_reserve_micropartition_ids(self):
         # Test initial reservation when no IDs exist
-        ids_1 = self.metadata.reserve_micropartition_ids(self.table, 5)
+        ids_1 = await self.metadata.reserve_micropartition_ids(self.table, 5)
         self.assertEqual(len(ids_1), 5)
         self.assertEqual(ids_1, [1, 2, 3, 4, 5])
 
         # Test subsequent reservation
-        ids_2 = self.metadata.reserve_micropartition_ids(self.table, 3)
+        ids_2 = await self.metadata.reserve_micropartition_ids(self.table, 3)
         self.assertEqual(len(ids_2), 3)
         self.assertEqual(ids_2, [6, 7, 8])
 
         # Test reserving a single ID
-        ids_3 = self.metadata.reserve_micropartition_ids(self.table, 1)
+        ids_3 = await self.metadata.reserve_micropartition_ids(self.table, 1)
         self.assertEqual(len(ids_3), 1)
         self.assertEqual(ids_3, [9])
 
         # Test reserving a larger batch
-        ids_4 = self.metadata.reserve_micropartition_ids(self.table, 10)
+        ids_4 = await self.metadata.reserve_micropartition_ids(self.table, 10)
         self.assertEqual(len(ids_4), 10)
         self.assertEqual(ids_4, list(range(10, 20)))
 
