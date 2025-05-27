@@ -36,6 +36,7 @@
     }
 
     @allowed remote_ip 108.171.206.146 \
+                   108.171.206.10     # self \ 
                    127.0.0.1 ::1      # host loopback (IPv4 + IPv6) \
                    172.17.0.0/16      # default docker0 bridge \
                    172.20.0.0/16      # your webgateway subnet
