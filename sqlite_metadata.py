@@ -160,7 +160,7 @@ class SqliteMetadata(MetadataStore):
             stats.append(mp.stats)
         return stats
 
-    def get_op(self, table: Table, version: int) -> SetOp | None:
+    async def get_op(self, table: Table, version: int) -> SetOp | None:
         with Session(self.engine) as session:
             stmt = (
                 select(Operation)

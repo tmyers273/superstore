@@ -79,7 +79,7 @@ class MetadataStore(Protocol):
         """
         raise NotImplementedError
 
-    def get_op(self, table: Table, version: int) -> SetOp | None:
+    async def get_op(self, table: Table, version: int) -> SetOp | None:
         """
         Returns the operation for the table at the given version.
         """
@@ -263,7 +263,7 @@ class FakeMetadataStore(MetadataStore):
         self.tables[table.name] = updated_table
         return updated_table
 
-    def get_op(self, table: Table, version: int) -> SetOp | None:
+    async def get_op(self, table: Table, version: int) -> SetOp | None:
         if table.name not in self.ops:
             return None
 
